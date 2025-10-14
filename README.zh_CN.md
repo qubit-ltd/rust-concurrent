@@ -1,9 +1,10 @@
 # Prism3 Concurrent
 
+[![CircleCI](https://circleci.com/gh/3-prism/prism3-rust-concurrent.svg?style=shield)](https://circleci.com/gh/3-prism/prism3-rust-concurrent)
+[![Coverage Status](https://coveralls.io/repos/github/3-prism/prism3-rust-concurrent/badge.svg?branch=main)](https://coveralls.io/github/3-prism/prism3-rust-concurrent?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/prism3-concurrent.svg?color=blue)](https://crates.io/crates/prism3-concurrent)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Documentation](https://docs.rs/prism3-concurrent/badge.svg)](https://docs.rs/prism3-concurrent)
 [![English Documentation](https://img.shields.io/badge/docs-English-blue.svg)](README.md)
 
 为 Prism3 生态系统提供线程安全锁包装器和同步原语的综合性 Rust 并发工具库。
@@ -197,40 +198,40 @@ fn main() {
 集成 `Arc` 的同步互斥锁包装器。
 
 **方法：**
-- `new(data: T) -> Self` - 创建新的互斥锁
-- `with_lock<F, R>(&self, f: F) -> R` - 获取锁并执行闭包
-- `try_with_lock<F, R>(&self, f: F) -> Option<R>` - 尝试获取锁而不阻塞
-- `clone(&self) -> Self` - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.new) - 创建新的互斥锁
+- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.with_lock) - 获取锁并执行闭包
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.try_with_lock) - 尝试获取锁而不阻塞
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.clone) - 克隆 Arc 引用
 
 ### ArcRwLock
 
 支持多个并发读者的同步读写锁包装器。
 
 **方法：**
-- `new(data: T) -> Self` - 创建新的读写锁
-- `with_read_lock<F, R>(&self, f: F) -> R` - 获取读锁
-- `with_write_lock<F, R>(&self, f: F) -> R` - 获取写锁
-- `clone(&self) -> Self` - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.new) - 创建新的读写锁
+- [`with_read_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.with_read_lock) - 获取读锁
+- [`with_write_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.with_write_lock) - 获取写锁
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.clone) - 克隆 Arc 引用
 
 ### ArcAsyncMutex
 
 用于 Tokio 运行时的异步互斥锁。
 
 **方法：**
-- `new(data: T) -> Self` - 创建新的异步互斥锁
-- `async with_lock<F, R>(&self, f: F) -> R` - 异步获取锁
-- `try_with_lock<F, R>(&self, f: F) -> Option<R>` - 尝试获取锁（非阻塞）
-- `clone(&self) -> Self` - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.new) - 创建新的异步互斥锁
+- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - 异步获取锁
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - 尝试获取锁（非阻塞）
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.clone) - 克隆 Arc 引用
 
 ### ArcAsyncRwLock
 
 用于 Tokio 运行时的异步读写锁。
 
 **方法：**
-- `new(data: T) -> Self` - 创建新的异步读写锁
-- `async with_read_lock<F, R>(&self, f: F) -> R` - 异步获取读锁
-- `async with_write_lock<F, R>(&self, f: F) -> R` - 异步获取写锁
-- `clone(&self) -> Self` - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.new) - 创建新的异步读写锁
+- [`async with_read_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.with_read_lock) - 异步获取读锁
+- [`async with_write_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.with_write_lock) - 异步获取写锁
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.clone) - 克隆 Arc 引用
 
 ## 设计模式
 
@@ -309,18 +310,32 @@ tokio::spawn(async move {
 
 ## 依赖项
 
-- **tokio**：异步运行时和同步原语（`AsyncMutex`、`AsyncRwLock`）
+- **tokio**：异步运行时和同步原语（features: `sync`）
 - **std**：标准库同步原语（`Mutex`、`RwLock`、`Arc`）
 
 ## 测试与代码覆盖率
 
-本项目保持全面的测试覆盖，验证所有锁场景，包括：
+本项目保持全面的测试覆盖，详细验证所有功能。
 
-- 基本锁操作
-- 克隆语义
-- 并发访问模式
-- 锁竞争场景
-- 毒化处理（针对同步锁）
+### 覆盖率指标
+
+当前测试覆盖率统计：
+
+| 模块 | 区域覆盖率 | 行覆盖率 | 函数覆盖率 |
+|--------|----------------|---------------|-------------------|
+| lock.rs | 100.00% | 100.00% | 100.00% |
+| **总计** | **100.00%** | **100.00%** | **100.00%** |
+
+### 测试场景
+
+测试套件覆盖：
+
+- ✅ **基本锁操作** - 创建和使用锁
+- ✅ **克隆语义** - 跨线程/任务共享锁
+- ✅ **并发访问模式** - 多个线程/任务访问共享数据
+- ✅ **锁竞争场景** - 高竞争环境下的测试
+- ✅ **尝试加锁操作** - 非阻塞锁尝试
+- ✅ **毒化处理** - 同步锁毒化场景
 
 ### 运行测试
 
@@ -333,9 +348,18 @@ cargo test
 
 # 生成文本格式报告
 ./coverage.sh text
+
+# 生成详细的 HTML 报告
+./coverage.sh html
 ```
 
-详细的覆盖率信息请参见 [COVERAGE.md](COVERAGE.md)。
+### 覆盖率工具信息
+
+覆盖率统计使用 `cargo-llvm-cov` 生成。关于如何运行覆盖率测试和解释结果的更多详情，请参见：
+
+- [COVERAGE.md](COVERAGE.md) - 英文覆盖率文档
+- [COVERAGE.zh_CN.md](COVERAGE.zh_CN.md) - 中文覆盖率文档
+- `target/llvm-cov/html/` 中的项目覆盖率报告
 
 ## 性能考虑
 
@@ -360,6 +384,11 @@ cargo test
 ## 贡献
 
 欢迎贡献！请随时提交 Pull Request。
+
+在贡献测试时，请确保：
+- 测试所有锁类型（同步和异步）
+- 验证并发场景
+- 覆盖边界情况（try_lock 失败、毒化等）
 
 ## 作者
 

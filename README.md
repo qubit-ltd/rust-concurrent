@@ -1,9 +1,10 @@
 # Prism3 Concurrent
 
+[![CircleCI](https://circleci.com/gh/3-prism/prism3-rust-concurrent.svg?style=shield)](https://circleci.com/gh/3-prism/prism3-rust-concurrent)
+[![Coverage Status](https://coveralls.io/repos/github/3-prism/prism3-rust-concurrent/badge.svg?branch=main)](https://coveralls.io/github/3-prism/prism3-rust-concurrent?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/prism3-concurrent.svg?color=blue)](https://crates.io/crates/prism3-concurrent)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Documentation](https://docs.rs/prism3-concurrent/badge.svg)](https://docs.rs/prism3-concurrent)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
 A comprehensive Rust concurrent utilities library providing thread-safe lock wrappers and synchronization primitives for the Prism3 ecosystem.
@@ -197,40 +198,40 @@ fn main() {
 A synchronous mutual exclusion lock wrapper with `Arc` integration.
 
 **Methods:**
-- `new(data: T) -> Self` - Create a new mutex
-- `with_lock<F, R>(&self, f: F) -> R` - Acquire lock and execute closure
-- `try_with_lock<F, R>(&self, f: F) -> Option<R>` - Try to acquire lock without blocking
-- `clone(&self) -> Self` - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.new) - Create a new mutex
+- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.with_lock) - Acquire lock and execute closure
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.try_with_lock) - Try to acquire lock without blocking
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.clone) - Clone the Arc reference
 
 ### ArcRwLock
 
 A synchronous read-write lock wrapper supporting multiple concurrent readers.
 
 **Methods:**
-- `new(data: T) -> Self` - Create a new read-write lock
-- `with_read_lock<F, R>(&self, f: F) -> R` - Acquire read lock
-- `with_write_lock<F, R>(&self, f: F) -> R` - Acquire write lock
-- `clone(&self) -> Self` - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.new) - Create a new read-write lock
+- [`with_read_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.with_read_lock) - Acquire read lock
+- [`with_write_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.with_write_lock) - Acquire write lock
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.clone) - Clone the Arc reference
 
 ### ArcAsyncMutex
 
 An asynchronous mutual exclusion lock for Tokio runtime.
 
 **Methods:**
-- `new(data: T) -> Self` - Create a new async mutex
-- `async with_lock<F, R>(&self, f: F) -> R` - Asynchronously acquire lock
-- `try_with_lock<F, R>(&self, f: F) -> Option<R>` - Try to acquire lock (non-blocking)
-- `clone(&self) -> Self` - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.new) - Create a new async mutex
+- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - Asynchronously acquire lock
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - Try to acquire lock (non-blocking)
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.clone) - Clone the Arc reference
 
 ### ArcAsyncRwLock
 
 An asynchronous read-write lock for Tokio runtime.
 
 **Methods:**
-- `new(data: T) -> Self` - Create a new async read-write lock
-- `async with_read_lock<F, R>(&self, f: F) -> R` - Asynchronously acquire read lock
-- `async with_write_lock<F, R>(&self, f: F) -> R` - Asynchronously acquire write lock
-- `clone(&self) -> Self` - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.new) - Create a new async read-write lock
+- [`async with_read_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.with_read_lock) - Asynchronously acquire read lock
+- [`async with_write_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.with_write_lock) - Asynchronously acquire write lock
+- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.clone) - Clone the Arc reference
 
 ## Design Patterns
 
@@ -309,18 +310,32 @@ tokio::spawn(async move {
 
 ## Dependencies
 
-- **tokio**: Async runtime and synchronization primitives (`AsyncMutex`, `AsyncRwLock`)
+- **tokio**: Async runtime and synchronization primitives (features: `sync`)
 - **std**: Standard library synchronization primitives (`Mutex`, `RwLock`, `Arc`)
 
 ## Testing & Code Coverage
 
-This project maintains comprehensive test coverage with validation of all locking scenarios including:
+This project maintains comprehensive test coverage with detailed validation of all functionality.
 
-- Basic lock operations
-- Clone semantics
-- Concurrent access patterns
-- Lock contention scenarios
-- Poison handling (for synchronous locks)
+### Coverage Metrics
+
+Current test coverage statistics:
+
+| Module | Region Coverage | Line Coverage | Function Coverage |
+|--------|----------------|---------------|-------------------|
+| lock.rs | 100.00% | 100.00% | 100.00% |
+| **Total** | **100.00%** | **100.00%** | **100.00%** |
+
+### Test Scenarios
+
+The test suite covers:
+
+- ✅ **Basic lock operations** - Creating and using locks
+- ✅ **Clone semantics** - Sharing locks across threads/tasks
+- ✅ **Concurrent access patterns** - Multiple threads/tasks accessing shared data
+- ✅ **Lock contention scenarios** - Testing under high contention
+- ✅ **Try lock operations** - Non-blocking lock attempts
+- ✅ **Poison handling** - Synchronous lock poisoning scenarios
 
 ### Running Tests
 
@@ -333,9 +348,18 @@ cargo test
 
 # Generate text format report
 ./coverage.sh text
+
+# Generate detailed HTML report
+./coverage.sh html
 ```
 
-For detailed coverage information, see [COVERAGE.md](COVERAGE.md).
+### Coverage Tool Information
+
+The coverage statistics are generated using `cargo-llvm-cov`. For more details on how to run coverage tests and interpret results, see:
+
+- [COVERAGE.md](COVERAGE.md) - English coverage documentation
+- [COVERAGE.zh_CN.md](COVERAGE.zh_CN.md) - Chinese coverage documentation
+- Project coverage reports in `target/llvm-cov/html/`
 
 ## Performance Considerations
 
@@ -360,6 +384,11 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+When contributing tests, ensure:
+- All lock types are tested (synchronous and asynchronous)
+- Concurrent scenarios are validated
+- Edge cases are covered (try_lock failures, poisoning, etc.)
 
 ## Author
 

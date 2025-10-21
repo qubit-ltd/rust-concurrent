@@ -27,8 +27,10 @@ name = "prism3_concurrent"
 doctest = false
 
 [dependencies]
-# 异步运行时
+# Async runtime
 tokio = { version = "1.0", features = ["sync"] }
+# Functional programming utilities
+prism3-function = "0.2.0"
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time"] }

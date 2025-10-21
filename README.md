@@ -27,6 +27,12 @@ Prism3 Concurrent provides easy-to-use wrappers around both synchronous and asyn
 - **Non-blocking**: Designed for async contexts without blocking threads
 - **Tokio Integration**: Built on top of Tokio's synchronization primitives
 
+### ⚙️ **Task Execution**
+- **Executor**: JDK-like executor trait for task submission and execution
+- **ExecutorService**: Lifecycle management with graceful shutdown support
+- **Runnable**: Task abstraction similar to Java's Runnable interface
+- **Flexible Execution**: Support for both synchronous and asynchronous task execution
+
 ### 🎯 **Key Benefits**
 - **Clone Support**: All lock wrappers implement `Clone` for easy sharing across threads
 - **Type Safety**: Leverages Rust's type system for compile-time guarantees
@@ -191,6 +197,50 @@ fn main() {
 }
 ```
 
+### Task Executor
+
+```rust
+use prism3_concurrent::{Executor, ExecutorService};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// Define a simple executor implementation
+struct SimpleExecutor {
+    task_count: Arc<AtomicUsize>,
+}
+
+impl Executor for SimpleExecutor {
+    fn execute(&self, task: Box<dyn FnOnce() + Send + 'static>) {
+        self.task_count.fetch_add(1, Ordering::SeqCst);
+        task();
+    }
+
+    fn spawn<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        tokio::spawn(future);
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let executor = SimpleExecutor {
+        task_count: Arc::new(AtomicUsize::new(0)),
+    };
+
+    // Execute synchronous task
+    executor.execute(Box::new(|| {
+        println!("Synchronous task executed");
+    }));
+
+    // Spawn asynchronous task
+    executor.spawn(async {
+        println!("Asynchronous task executed");
+    });
+}
+```
+
 ## API Reference
 
 ### ArcMutex
@@ -232,6 +282,32 @@ An asynchronous read-write lock for Tokio runtime.
 - [`async with_read_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.with_read_lock) - Asynchronously acquire read lock
 - [`async with_write_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.with_write_lock) - Asynchronously acquire write lock
 - [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.clone) - Clone the Arc reference
+
+### Executor
+
+A trait for executing submitted tasks, similar to JDK's Executor interface.
+
+**Methods:**
+- [`execute(&self, task: Box<dyn FnOnce() + Send + 'static>)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.Executor.html#tymethod.execute) - Execute a synchronous task
+- [`spawn<F>(&self, future: F)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.Executor.html#tymethod.spawn) - Spawn an asynchronous task
+
+### ExecutorService
+
+A trait providing lifecycle management for executors, similar to JDK's ExecutorService interface.
+
+**Methods:**
+- [`shutdown(&self)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.shutdown) - Initiate graceful shutdown
+- [`shutdown_now(&self) -> Vec<Box<dyn Runnable>>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.shutdown_now) - Attempt to stop all tasks
+- [`is_shutdown(&self) -> bool`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.is_shutdown) - Check if executor is shutdown
+- [`is_terminated(&self) -> bool`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.is_terminated) - Check if all tasks completed
+- [`await_termination(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.await_termination) - Wait for task completion
+
+### Runnable
+
+A trait representing a runnable task, similar to JDK's Runnable interface.
+
+**Methods:**
+- [`run(&self)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.Runnable.html#tymethod.run) - Execute the task
 
 ## Design Patterns
 

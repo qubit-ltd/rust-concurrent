@@ -51,7 +51,8 @@ jobs:
   # Job: Build, Test and Coverage
   # Combines building, testing, and coverage generation in a single job.
   # This optimization eliminates an additional container spin-up (~12-15 seconds).
-  # Coverage is generated immediately after tests run, reusing the same environment.
+  # Tests are run directly via cargo-llvm-cov to avoid duplicate test execution,
+  # saving ~50% of test execution time.
   # ------------------------------------------------------------------------------
   build_test_coverage:
     executor:
@@ -99,10 +100,7 @@ jobs:
           name: Build project (debug)
           command: cargo build --verbose
       - run:
-          name: Run tests
-          command: cargo test --verbose
-      - run:
-          name: Generate coverage report
+          name: Run tests and generate coverage report
           command: |
             # Auto-detect package name from Cargo.toml
             PACKAGE_NAME=$(grep "^name = " Cargo.toml | head -n 1 | sed 's/name = "\(.*\)"/\1/')
@@ -280,10 +278,12 @@ workflows:
       # Stage 2: Build, test and coverage in one container
       # This is the core job that includes:
       #   - Build (debug + release)
-      #   - Run tests
+      #   - Run tests with coverage (via cargo-llvm-cov)
       #   - Generate coverage reports
       #   - Upload to Coveralls
-      # Saves ~12-15 seconds by eliminating separate coverage container
+      # Optimizations:
+      #   - Eliminates separate coverage container (~12-15 seconds saved)
+      #   - Avoids duplicate test execution (~50% test time saved)
       - build_test_coverage:
           requires:
             - fast_checks

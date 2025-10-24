@@ -10,7 +10,7 @@
 //!
 //! Tests for the ArcAsyncRwLock implementation
 
-use prism3_concurrent::{ArcAsyncRwLock, AsyncReadWriteLock};
+use prism3_concurrent::{ArcAsyncRwLock, AsyncLock};
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -20,26 +20,26 @@ mod arc_async_rw_lock_tests {
     #[tokio::test]
     async fn test_arc_async_rw_lock_new() {
         let async_rw_lock = ArcAsyncRwLock::new(42);
-        let result = async_rw_lock.with_read_lock(|value| *value).await;
+        let result = async_rw_lock.read(|value| *value).await;
         assert_eq!(result, 42);
     }
 
     #[tokio::test]
-    async fn test_arc_async_rw_lock_with_read_lock() {
+    async fn test_arc_async_rw_lock_read() {
         let async_rw_lock = ArcAsyncRwLock::new(0);
 
         // Test read lock
-        let result = async_rw_lock.with_read_lock(|value| *value).await;
+        let result = async_rw_lock.read(|value| *value).await;
         assert_eq!(result, 0);
     }
 
     #[tokio::test]
-    async fn test_arc_async_rw_lock_with_write_lock() {
+    async fn test_arc_async_rw_lock_write() {
         let async_rw_lock = ArcAsyncRwLock::new(0);
 
         // Test write lock
         let result = async_rw_lock
-            .with_write_lock(|value| {
+            .write(|value| {
                 *value += 1;
                 *value
             })
@@ -54,7 +54,7 @@ mod arc_async_rw_lock_tests {
 
         // Test cloned async read-write lock
         let result = async_rw_lock_clone
-            .with_write_lock(|value| {
+            .write(|value| {
                 *value += 1;
                 *value
             })
@@ -62,7 +62,7 @@ mod arc_async_rw_lock_tests {
         assert_eq!(result, 1);
 
         // Verify that original lock can see changes
-        let result = async_rw_lock.with_read_lock(|value| *value).await;
+        let result = async_rw_lock.read(|value| *value).await;
         assert_eq!(result, 1);
     }
 
@@ -77,7 +77,7 @@ mod arc_async_rw_lock_tests {
             let async_rw_lock = Arc::clone(&async_rw_lock);
             let handle = tokio::spawn(async move {
                 async_rw_lock
-                    .with_read_lock(|data| {
+                    .read(|data| {
                         // Simulate some read operation
                         data.iter().sum::<i32>()
                     })
@@ -104,7 +104,7 @@ mod arc_async_rw_lock_tests {
             let async_rw_lock = Arc::clone(&async_rw_lock);
             let handle = tokio::spawn(async move {
                 async_rw_lock
-                    .with_write_lock(|value| {
+                    .write(|value| {
                         *value += 1;
                     })
                     .await;
@@ -118,7 +118,7 @@ mod arc_async_rw_lock_tests {
         }
 
         // Verify final value (should be 10 if writes are exclusive)
-        let result = async_rw_lock.with_read_lock(|value| *value).await;
+        let result = async_rw_lock.read(|value| *value).await;
         assert_eq!(result, 10);
     }
 
@@ -128,13 +128,13 @@ mod arc_async_rw_lock_tests {
 
         // Write operation
         async_rw_lock
-            .with_write_lock(|s| {
+            .write(|s| {
                 s.push_str(" World");
             })
             .await;
 
         // Read operation should see the change
-        let result = async_rw_lock.with_read_lock(|s| s.clone()).await;
+        let result = async_rw_lock.read(|s| s.clone()).await;
         assert_eq!(result, "Hello World");
     }
 
@@ -143,12 +143,12 @@ mod arc_async_rw_lock_tests {
         let async_rw_lock = ArcAsyncRwLock::new(vec![1, 2, 3]);
 
         // Multiple readers can access concurrently
-        let len = async_rw_lock.with_read_lock(|v| v.len()).await;
+        let len = async_rw_lock.read(|v| v.len()).await;
         assert_eq!(len, 3);
 
         // Writer modifies the data
         async_rw_lock
-            .with_write_lock(|v| {
+            .write(|v| {
                 v.push(4);
                 v.push(5);
             })
@@ -156,7 +156,7 @@ mod arc_async_rw_lock_tests {
 
         // Reader sees the updated data
         let sum = async_rw_lock
-            .with_read_lock(|v| v.iter().sum::<i32>())
+            .read(|v| v.iter().sum::<i32>())
             .await;
         assert_eq!(sum, 15);
     }
@@ -166,13 +166,13 @@ mod arc_async_rw_lock_tests {
         let async_rw_lock = ArcAsyncRwLock::new(vec![10, 20, 30]);
 
         let result = async_rw_lock
-            .with_read_lock(|v| v.iter().map(|&x| x * 2).collect::<Vec<_>>())
+            .read(|v| v.iter().map(|&x| x * 2).collect::<Vec<_>>())
             .await;
 
         assert_eq!(result, vec![20, 40, 60]);
 
         // Original should be unchanged
-        let original = async_rw_lock.with_read_lock(|v| v.clone()).await;
+        let original = async_rw_lock.read(|v| v.clone()).await;
         assert_eq!(original, vec![10, 20, 30]);
     }
 
@@ -181,7 +181,7 @@ mod arc_async_rw_lock_tests {
         let async_rw_lock = ArcAsyncRwLock::new(5);
 
         let result = async_rw_lock
-            .with_write_lock(|value| {
+            .write(|value| {
                 *value *= 2;
                 *value
             })
@@ -190,7 +190,7 @@ mod arc_async_rw_lock_tests {
         assert_eq!(result, 10);
 
         // Verify the value was actually modified
-        let current = async_rw_lock.with_read_lock(|value| *value).await;
+        let current = async_rw_lock.read(|value| *value).await;
         assert_eq!(current, 10);
     }
 
@@ -206,7 +206,7 @@ mod arc_async_rw_lock_tests {
             let handle = tokio::spawn(async move {
                 for _ in 0..10 {
                     async_rw_lock
-                        .with_read_lock(|value| {
+                        .read(|value| {
                             let _ = *value;
                         })
                         .await;
@@ -221,7 +221,7 @@ mod arc_async_rw_lock_tests {
             let handle = tokio::spawn(async move {
                 for _ in 0..10 {
                     async_rw_lock
-                        .with_write_lock(|value| {
+                        .write(|value| {
                             *value += 1;
                         })
                         .await;
@@ -236,7 +236,7 @@ mod arc_async_rw_lock_tests {
         }
 
         // Verify final value
-        let result = async_rw_lock.with_read_lock(|value| *value).await;
+        let result = async_rw_lock.read(|value| *value).await;
         assert_eq!(result, 50); // 5 writers × 10 increments each
     }
 
@@ -252,7 +252,7 @@ mod arc_async_rw_lock_tests {
             let handle = tokio::spawn(async move {
                 // All readers should be able to access concurrently
                 async_rw_lock
-                    .with_read_lock(|data| {
+                    .read(|data| {
                         data.iter().sum::<i32>() + i
                     })
                     .await
@@ -282,7 +282,7 @@ mod arc_async_rw_lock_tests {
         let async_rw_lock_clone = async_rw_lock.clone();
         let write_handle = tokio::spawn(async move {
             async_rw_lock_clone
-                .with_write_lock(|value| {
+                .write(|value| {
                     *value += 1;
                     // Hold the write lock for some time
                     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -294,7 +294,7 @@ mod arc_async_rw_lock_tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
         // Try to read (should wait for write to complete)
-        let read_result = async_rw_lock.with_read_lock(|value| *value).await;
+        let read_result = async_rw_lock.read(|value| *value).await;
 
         // Wait for write task to complete
         write_handle.await.unwrap();
@@ -311,7 +311,7 @@ mod arc_async_rw_lock_tests {
         let handle1 = tokio::spawn(async move {
             for _ in 0..50 {
                 async_rw_lock1
-                    .with_write_lock(|value| {
+                    .write(|value| {
                         *value += 1;
                     })
                     .await;
@@ -322,7 +322,7 @@ mod arc_async_rw_lock_tests {
         let handle2 = tokio::spawn(async move {
             for _ in 0..50 {
                 async_rw_lock2
-                    .with_write_lock(|value| {
+                    .write(|value| {
                         *value += 1;
                     })
                     .await;
@@ -332,7 +332,7 @@ mod arc_async_rw_lock_tests {
         handle1.await.unwrap();
         handle2.await.unwrap();
 
-        let result = async_rw_lock.with_read_lock(|value| *value).await;
+        let result = async_rw_lock.read(|value| *value).await;
         assert_eq!(result, 100);
     }
 
@@ -343,19 +343,19 @@ mod arc_async_rw_lock_tests {
         let async_rw_lock = ArcAsyncRwLock::new(HashMap::new());
 
         async_rw_lock
-            .with_write_lock(|map| {
+            .write(|map| {
                 map.insert("key1", 10);
                 map.insert("key2", 20);
             })
             .await;
 
         let value1 = async_rw_lock
-            .with_read_lock(|map| map.get("key1").copied())
+            .read(|map| map.get("key1").copied())
             .await;
         assert_eq!(value1, Some(10));
 
         let value2 = async_rw_lock
-            .with_read_lock(|map| map.get("key2").copied())
+            .read(|map| map.get("key2").copied())
             .await;
         assert_eq!(value2, Some(20));
     }
@@ -365,7 +365,7 @@ mod arc_async_rw_lock_tests {
         let async_rw_lock = ArcAsyncRwLock::new(10);
 
         let result = async_rw_lock
-            .with_read_lock(|value| -> Result<i32, &str> {
+            .read(|value| -> Result<i32, &str> {
                 if *value > 0 {
                     Ok(*value * 2)
                 } else {

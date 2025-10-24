@@ -13,9 +13,7 @@
 
 // Trait tests
 mod lock_tests;
-mod read_write_lock_tests;
 mod async_lock_tests;
-mod async_read_write_lock_tests;
 
 // Implementation tests
 mod arc_mutex_tests;

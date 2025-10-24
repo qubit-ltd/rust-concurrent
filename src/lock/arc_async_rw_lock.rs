@@ -18,7 +18,7 @@
 use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::RwLock as AsyncRwLock;
-use crate::lock::async_read_write_lock::AsyncReadWriteLock;
+use crate::lock::AsyncLock;
 
 /// Asynchronous Read-Write Lock Wrapper
 ///
@@ -55,12 +55,12 @@ use crate::lock::async_read_write_lock::AsyncReadWriteLock;
 ///     let data = Arc::new(data);
 ///
 ///     // Multiple read operations can execute concurrently
-///     data.with_read_lock(|s| {
+///     data.read(|s| {
 ///         println!("Read: {}", s);
 ///     }).await;
 ///
 ///     // Write operations have exclusive access
-///     data.with_write_lock(|s| {
+///     data.write(|s| {
 ///         s.push_str(" World!");
 ///         println!("Write: {}", s);
 ///     }).await;
@@ -100,7 +100,7 @@ impl<T> ArcAsyncRwLock<T> {
     }
 }
 
-impl<T> AsyncReadWriteLock<T> for ArcAsyncRwLock<T>
+impl<T> AsyncLock<T> for ArcAsyncRwLock<T>
 where
     T: Send + Sync,
 {
@@ -130,11 +130,11 @@ where
     /// async fn main() {
     ///     let data = ArcAsyncRwLock::new(vec![1, 2, 3]);
     ///
-    ///     let length = data.with_read_lock(|v| v.len()).await;
+    ///     let length = data.read(|v| v.len()).await;
     ///     println!("Vector length: {}", length);
     /// }
     /// ```
-    fn with_read_lock<R, F>(&self, f: F) -> impl Future<Output = R> + Send
+    fn read<R, F>(&self, f: F) -> impl Future<Output = R> + Send
     where
         F: FnOnce(&T) -> R + Send,
     {
@@ -171,19 +171,41 @@ where
     /// async fn main() {
     ///     let data = ArcAsyncRwLock::new(vec![1, 2, 3]);
     ///
-    ///     data.with_write_lock(|v| {
+    ///     data.write(|v| {
     ///         v.push(4);
     ///         println!("Added element, new length: {}", v.len());
     ///     }).await;
     /// }
     /// ```
-    fn with_write_lock<R, F>(&self, f: F) -> impl Future<Output = R> + Send
+    fn write<R, F>(&self, f: F) -> impl Future<Output = R> + Send
     where
         F: FnOnce(&mut T) -> R + Send,
     {
         async move {
             let mut guard = self.inner.write().await;
             f(&mut *guard)
+        }
+    }
+
+    fn try_read<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        if let Ok(guard) = self.inner.try_read() {
+            Some(f(&*guard))
+        } else {
+            None
+        }
+    }
+
+    fn try_write<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        if let Ok(mut guard) = self.inner.try_write() {
+            Some(f(&mut *guard))
+        } else {
+            None
         }
     }
 }

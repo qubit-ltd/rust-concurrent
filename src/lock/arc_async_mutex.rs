@@ -14,12 +14,9 @@
 //! # Author
 //!
 //! Haixing Hu
-
-use std::future::Future;
-
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
-use crate::lock::async_lock::AsyncLock;
+use crate::lock::AsyncLock;
 
 /// Asynchronous Mutex Wrapper
 ///
@@ -130,48 +127,36 @@ where
     ///     println!("Counter value: {}", result);
     /// }
     /// ```
-    fn with_lock<R, F>(&self, f: F) -> impl Future<Output = R> + Send
+    async fn read<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R + Send,
+        R: Send,
+    {
+        let guard = self.inner.lock().await;
+        f(&*guard)
+    }
+
+    async fn write<R, F>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R + Send,
+        R: Send,
     {
-        async move {
-            let mut guard = self.inner.lock().await;
-            f(&mut *guard)
+        let mut guard = self.inner.lock().await;
+        f(&mut *guard)
+    }
+
+    fn try_read<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        if let Ok(guard) = self.inner.try_lock() {
+            Some(f(&*guard))
+        } else {
+            None
         }
     }
 
-    /// Attempts to acquire the lock
-    ///
-    /// Attempts to immediately acquire the lock. If the lock is
-    /// already held by another task, returns `None` without
-    /// waiting. Otherwise, it executes the closure and returns
-    /// `Some` containing the result.
-    ///
-    /// # Arguments
-    ///
-    /// * `f` - The closure to be executed while holding the lock
-    ///
-    /// # Returns
-    ///
-    /// * `Some(R)` - If the lock was successfully acquired and the
-    ///   closure executed
-    /// * `None` - If the lock is already held by another task
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use prism3_rust_concurrent::lock::{ArcAsyncMutex, AsyncLock};
-    ///
-    /// let counter = ArcAsyncMutex::new(0);
-    ///
-    /// // Try to acquire lock
-    /// if let Some(value) = counter.try_with_lock(|c| *c) {
-    ///     println!("Current value: {}", value);
-    /// } else {
-    ///     println!("Lock is busy");
-    /// }
-    /// ```
-    fn try_with_lock<R, F>(&self, f: F) -> Option<R>
+    fn try_write<R, F>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,
     {

@@ -15,28 +15,53 @@
 //!
 //! Haixing Hu
 use std::future::Future;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
 
-/// Asynchronous lock trait
+/// Unified asynchronous lock trait
 ///
 /// Provides a unified interface for different types of asynchronous
-/// locks. This trait allows locks to be used in async contexts
-/// through closures, avoiding the complexity of explicitly managing
-/// lock guards and their lifetimes.
+/// locks, supporting both read and write operations. This trait allows
+/// locks to be used in async contexts through closures, avoiding the
+/// complexity of explicitly managing lock guards and their lifetimes.
 ///
 /// # Design Philosophy
 ///
-/// The core methods of this trait accept closures that receive a
-/// mutable reference to the protected data. Internally, these methods
-/// asynchronously acquire the lock guard, dereference it to obtain the
-/// data reference, and pass this reference to the user-provided
-/// closure. This design pattern:
+/// This trait unifies both exclusive async locks (like `tokio::sync::Mutex`)
+/// and read-write async locks (like `tokio::sync::RwLock`) under a single
+/// interface. The key insight is that all async locks can be viewed as
+/// supporting two operations:
 ///
-/// - Hides guard lifetime complexity from users
-/// - Ensures locks are automatically released when closures return
-/// - Provides a uniform API across different lock implementations
-/// - Enables writing generic async code over various lock types
-/// - Does not block threads while waiting for locks
+/// - **Read operations**: Provide immutable access (`&T`) to the data
+/// - **Write operations**: Provide mutable access (`&mut T`) to the data
+///
+/// For exclusive async locks (Mutex), both read and write operations
+/// acquire the same exclusive lock, but the API clearly indicates the
+/// intended usage. For read-write async locks (RwLock), read operations
+/// use shared locks while write operations use exclusive locks.
+///
+/// This design enables:
+/// - Unified API across different async lock types
+/// - Clear semantic distinction between read and write operations
+/// - Generic async code that works with any lock type
+/// - Performance optimization through appropriate lock selection
+/// - Non-blocking async operations
+///
+/// # Performance Characteristics
+///
+/// Different async lock implementations have different performance
+/// characteristics:
+///
+/// ## Mutex-based async locks (ArcAsyncMutex, AsyncMutex)
+/// - `read`: Acquires exclusive lock, same performance as write
+/// - `write`: Acquires exclusive lock, same performance as read
+/// - **Use case**: When you need exclusive access or don't know access
+///   patterns
+///
+/// ## RwLock-based async locks (ArcAsyncRwLock, AsyncRwLock)
+/// - `read`: Acquires shared lock, allows concurrent readers
+/// - `write`: Acquires exclusive lock, blocks all other operations
+/// - **Use case**: Read-heavy async workloads where multiple readers can
+///   proceed concurrently
 ///
 /// # Type Parameters
 ///
@@ -46,70 +71,162 @@ use tokio::sync::Mutex as AsyncMutex;
 ///
 /// Haixing Hu
 pub trait AsyncLock<T: ?Sized> {
-    /// Acquires the lock asynchronously and executes a closure
+    /// Acquires a read lock asynchronously and executes a closure
     ///
-    /// This method awaits until the lock can be acquired without
+    /// This method awaits until a read lock can be acquired without
     /// blocking the thread, then executes the provided closure with
-    /// mutable access to the protected data. The lock is
-    /// automatically released when the closure returns.
+    /// immutable access to the protected data. For exclusive async
+    /// locks (Mutex), this acquires the same exclusive lock as write
+    /// operations. For read-write async locks (RwLock), this acquires
+    /// a shared lock allowing concurrent readers.
     ///
-    /// # How It Works
+    /// # Use Cases
     ///
-    /// 1. Asynchronously awaits the lock guard (e.g., `MutexGuard`)
-    /// 2. Dereferences the guard to obtain `&mut T`
-    /// 3. Passes this mutable reference to the closure
-    /// 4. Automatically releases the lock when the closure completes
+    /// - **Data inspection**: Reading values, checking state, validation
+    /// - **Read-only operations**: Computing derived values, formatting
+    ///   output
+    /// - **Condition checking**: Evaluating predicates without modification
+    /// - **Logging and debugging**: Accessing data for diagnostic purposes
+    ///
+    /// # Performance Notes
+    ///
+    /// - **Mutex-based async locks**: Same performance as write operations
+    /// - **RwLock-based async locks**: Allows concurrent readers, better
+    ///   for read-heavy async workloads
     ///
     /// # Arguments
     ///
-    /// * `f` - Closure that receives a mutable reference (`&mut T`) to
-    ///   the protected data. This reference is obtained by dereferencing
-    ///   the acquired lock guard.
+    /// * `f` - Closure that receives an immutable reference (`&T`) to
+    ///   the protected data
     ///
     /// # Returns
     ///
-    /// Returns a future that resolves to the result produced by
-    /// the closure
+    /// Returns a future that resolves to the result produced by the closure
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// use prism3_rust_concurrent::lock::{AsyncLock, ArcAsyncMutex};
+    /// use prism3_rust_concurrent::lock::{AsyncLock, ArcAsyncRwLock};
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let lock = ArcAsyncMutex::new(42);
-    ///     let result = lock.with_lock(|value| {
-    ///         *value += 1;
-    ///         *value
-    ///     }).await;
-    ///     assert_eq!(result, 43);
+    ///     let lock = ArcAsyncRwLock::new(vec![1, 2, 3]);
+    ///
+    ///     // Read operation - allows concurrent readers with RwLock
+    ///     let len = lock.read(|data| data.len()).await;
+    ///     assert_eq!(len, 3);
+    ///
+    ///     // Multiple concurrent readers possible with RwLock
+    ///     let sum = lock.read(|data|
+    ///         data.iter().sum::<i32>()
+    ///     ).await;
+    ///     assert_eq!(sum, 6);
     /// }
     /// ```
-    fn with_lock<R, F>(&self, f: F) -> impl Future<Output = R> + Send
+    fn read<R, F>(&self, f: F) -> impl Future<Output = R> + Send
     where
-        F: FnOnce(&mut T) -> R + Send,
+        F: FnOnce(&T) -> R + Send,
         R: Send;
 
-    /// Attempts to acquire the lock without waiting
+    /// Acquires a write lock asynchronously and executes a closure
     ///
-    /// This method tries to acquire the lock immediately. If the lock
-    /// is currently held by another task, it returns `None` without
-    /// waiting. Otherwise, it executes the closure and returns `Some`
-    /// containing the result.
+    /// This method awaits until a write lock can be acquired without
+    /// blocking the thread, then executes the provided closure with
+    /// mutable access to the protected data. For all async lock types,
+    /// this acquires an exclusive lock that blocks all other operations
+    /// until the closure completes.
     ///
-    /// # How It Works
+    /// # Use Cases
     ///
-    /// 1. Attempts to acquire the lock guard without waiting
-    /// 2. If successful, dereferences the guard to obtain `&mut T`
-    /// 3. Passes this mutable reference to the closure
-    /// 4. Returns `Some(result)` after releasing the lock
-    /// 5. Returns `None` if the lock is currently held
+    /// - **Data modification**: Updating values, adding/removing elements
+    /// - **State changes**: Transitioning between different states
+    /// - **Initialization**: Setting up data structures
+    /// - **Cleanup operations**: Releasing resources, resetting state
+    ///
+    /// # Performance Notes
+    ///
+    /// - **All async lock types**: Exclusive access, blocks all other
+    ///   operations
+    /// - **RwLock advantage**: Only blocks during actual writes, not reads
     ///
     /// # Arguments
     ///
     /// * `f` - Closure that receives a mutable reference (`&mut T`) to
-    ///   the protected data if the lock is successfully acquired.
+    ///   the protected data
+    ///
+    /// # Returns
+    ///
+    /// Returns a future that resolves to the result produced by the closure
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use prism3_rust_concurrent::lock::{AsyncLock, ArcAsyncRwLock};
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let lock = ArcAsyncRwLock::new(vec![1, 2, 3]);
+    ///
+    ///     // Write operation - exclusive access
+    ///     lock.write(|data| {
+    ///         data.push(4);
+    ///         data.sort();
+    ///     }).await;
+    ///
+    ///     // Verify the changes
+    ///     let result = lock.read(|data| data.clone()).await;
+    ///     assert_eq!(result, vec![1, 2, 3, 4]);
+    /// }
+    /// ```
+    fn write<R, F>(&self, f: F) -> impl Future<Output = R> + Send
+    where
+        F: FnOnce(&mut T) -> R + Send,
+        R: Send;
+
+    /// Attempts to acquire a read lock without waiting
+    ///
+    /// This method tries to acquire a read lock immediately. If the lock
+    /// is currently held by another task in write mode, it returns `None`
+    /// without waiting. Otherwise, it executes the closure and returns
+    /// `Some` containing the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - Closure that receives an immutable reference (`&T`) to
+    ///   the protected data if the lock is successfully acquired
+    ///
+    /// # Returns
+    ///
+    /// * `Some(R)` - If the lock was acquired and closure executed
+    /// * `None` - If the lock is currently held in write mode
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use prism3_rust_concurrent::lock::{AsyncLock, ArcAsyncRwLock};
+    ///
+    /// let lock = ArcAsyncRwLock::new(42);
+    /// if let Some(value) = lock.try_read(|data| *data) {
+    ///     println!("Got value: {}", value);
+    /// } else {
+    ///     println!("Lock is busy with write operation");
+    /// }
+    /// ```
+    fn try_read<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R;
+
+    /// Attempts to acquire a write lock without waiting
+    ///
+    /// This method tries to acquire a write lock immediately. If the lock
+    /// is currently held by another task (in either read or write mode),
+    /// it returns `None` without waiting. Otherwise, it executes the
+    /// closure and returns `Some` containing the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - Closure that receives a mutable reference (`&mut T`) to
+    ///   the protected data if the lock is successfully acquired
     ///
     /// # Returns
     ///
@@ -122,13 +239,16 @@ pub trait AsyncLock<T: ?Sized> {
     /// use prism3_rust_concurrent::lock::{AsyncLock, ArcAsyncMutex};
     ///
     /// let lock = ArcAsyncMutex::new(42);
-    /// if let Some(result) = lock.try_with_lock(|value| *value) {
-    ///     println!("Got value: {}", result);
+    /// if let Some(result) = lock.try_write(|data| {
+    ///     *data += 1;
+    ///     *data
+    /// }) {
+    ///     println!("New value: {}", result);
     /// } else {
     ///     println!("Lock is busy");
     /// }
     /// ```
-    fn try_with_lock<R, F>(&self, f: F) -> Option<R>
+    fn try_write<R, F>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R;
 }
@@ -137,6 +257,8 @@ pub trait AsyncLock<T: ?Sized> {
 ///
 /// This implementation uses Tokio's `Mutex` type to provide an
 /// asynchronous lock that can be awaited without blocking threads.
+/// Both read and write operations acquire the same exclusive lock,
+/// ensuring thread safety at the cost of concurrent access.
 ///
 /// # Type Parameters
 ///
@@ -146,7 +268,16 @@ pub trait AsyncLock<T: ?Sized> {
 ///
 /// Haixing Hu
 impl<T: ?Sized + Send> AsyncLock<T> for AsyncMutex<T> {
-    async fn with_lock<R, F>(&self, f: F) -> R
+    async fn read<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R + Send,
+        R: Send,
+    {
+        let guard = self.lock().await;
+        f(&*guard)
+    }
+
+    async fn write<R, F>(&self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R + Send,
         R: Send,
@@ -155,11 +286,79 @@ impl<T: ?Sized + Send> AsyncLock<T> for AsyncMutex<T> {
         f(&mut *guard)
     }
 
-    fn try_with_lock<R, F>(&self, f: F) -> Option<R>
+    fn try_read<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        if let Ok(guard) = self.try_lock() {
+            Some(f(&*guard))
+        } else {
+            None
+        }
+    }
+
+    fn try_write<R, F>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R,
     {
         if let Ok(mut guard) = self.try_lock() {
+            Some(f(&mut *guard))
+        } else {
+            None
+        }
+    }
+}
+
+/// Asynchronous read-write lock implementation for tokio::sync::RwLock
+///
+/// This implementation uses Tokio's `RwLock` type to provide an
+/// asynchronous read-write lock that supports multiple concurrent
+/// readers or a single writer without blocking threads. Read operations
+/// use shared locks allowing concurrent readers, while write operations
+/// use exclusive locks that block all other operations.
+///
+/// # Type Parameters
+///
+/// * `T` - The type of data protected by the lock
+///
+/// # Author
+///
+/// Haixing Hu
+impl<T: ?Sized + Send + Sync> AsyncLock<T> for AsyncRwLock<T> {
+    async fn read<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R + Send,
+        R: Send,
+    {
+        let guard = self.read().await;
+        f(&*guard)
+    }
+
+    async fn write<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R + Send,
+        R: Send,
+    {
+        let mut guard = self.write().await;
+        f(&mut *guard)
+    }
+
+    fn try_read<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        if let Ok(guard) = self.try_read() {
+            Some(f(&*guard))
+        } else {
+            None
+        }
+    }
+
+    fn try_write<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        if let Ok(mut guard) = self.try_write() {
             Some(f(&mut *guard))
         } else {
             None

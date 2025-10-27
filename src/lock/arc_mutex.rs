@@ -16,6 +16,7 @@
 //! Haixing Hu
 
 use std::sync::{Arc, Mutex};
+
 use crate::lock::Lock;
 
 /// Synchronous Mutex Wrapper
@@ -252,4 +253,3 @@ impl<T> Clone for ArcMutex<T> {
         }
     }
 }
-

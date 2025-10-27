@@ -10,8 +10,11 @@
 //!
 //! Tests for the Lock trait and its implementations for std::sync::Mutex and std::sync::RwLock
 
-use std::sync::{Arc, Barrier};
-use std::thread;
+use std::{
+    sync::{Arc, Barrier},
+    thread,
+};
+
 use prism3_concurrent::lock::{ArcMutex, ArcRwLock, Lock};
 
 #[cfg(test)]
@@ -177,10 +180,7 @@ mod lock_trait_tests {
 
         // Try to acquire poisoned lock, should return None
         let result = mutex.try_read(|value| *value);
-        assert!(
-            result.is_none(),
-            "Expected None for poisoned lock"
-        );
+        assert!(result.is_none(), "Expected None for poisoned lock");
     }
 
     #[test]
@@ -328,9 +328,7 @@ mod rwlock_trait_tests {
     fn test_rwlock_read_lock_returns_closure_result() {
         let rw_lock = ArcRwLock::new(vec![10, 20, 30]);
 
-        let result = rw_lock.read(|v| {
-            v.iter().map(|&x| x * 2).collect::<Vec<_>>()
-        });
+        let result = rw_lock.read(|v| v.iter().map(|&x| x * 2).collect::<Vec<_>>());
 
         assert_eq!(result, vec![20, 40, 60]);
 
@@ -491,4 +489,3 @@ mod rwlock_trait_tests {
         assert_eq!(result, 50); // 5 writers × 10 increments each
     }
 }
-

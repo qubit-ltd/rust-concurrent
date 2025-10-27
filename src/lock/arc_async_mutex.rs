@@ -15,7 +15,9 @@
 //!
 //! Haixing Hu
 use std::sync::Arc;
+
 use tokio::sync::Mutex as AsyncMutex;
+
 use crate::lock::AsyncLock;
 
 /// Asynchronous Mutex Wrapper

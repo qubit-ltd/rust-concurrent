@@ -63,9 +63,13 @@ mod async_lock_trait_tests {
 
     #[tokio::test]
     async fn test_async_mutex_try_with_lock_returns_none_when_locked() {
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::time::Duration;
+        use std::{
+            sync::{
+                atomic::{AtomicBool, Ordering},
+                Arc,
+            },
+            time::Duration,
+        };
 
         let async_mutex = Arc::new(ArcAsyncMutex::new(0));
         let lock_held = Arc::new(AtomicBool::new(false));
@@ -78,11 +82,13 @@ mod async_lock_trait_tests {
         let handle = std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                async_mutex_clone.write(|_| {
-                    lock_held_clone.store(true, Ordering::Release);
-                    // Hold the lock for a short time
-                    std::thread::sleep(Duration::from_millis(10));
-                }).await;
+                async_mutex_clone
+                    .write(|_| {
+                        lock_held_clone.store(true, Ordering::Release);
+                        // Hold the lock for a short time
+                        std::thread::sleep(Duration::from_millis(10));
+                    })
+                    .await;
             });
         });
 
@@ -270,10 +276,12 @@ mod async_rwlock_trait_tests {
     async fn test_async_rwlock_write_basic() {
         let async_rw_lock = ArcAsyncRwLock::new(0);
 
-        let result = async_rw_lock.write(|value| {
-            *value += 1;
-            *value
-        }).await;
+        let result = async_rw_lock
+            .write(|value| {
+                *value += 1;
+                *value
+            })
+            .await;
         assert_eq!(result, 1);
 
         // Verify the value was persisted
@@ -320,9 +328,11 @@ mod async_rwlock_trait_tests {
         for _ in 0..10 {
             let async_rw_lock = Arc::clone(&async_rw_lock);
             let handle = tokio::spawn(async move {
-                async_rw_lock.write(|value| {
-                    *value += 1;
-                }).await;
+                async_rw_lock
+                    .write(|value| {
+                        *value += 1;
+                    })
+                    .await;
             });
             handles.push(handle);
         }
@@ -342,9 +352,11 @@ mod async_rwlock_trait_tests {
         let async_rw_lock = ArcAsyncRwLock::new(String::from("Hello"));
 
         // Write operation
-        async_rw_lock.write(|s| {
-            s.push_str(" World");
-        }).await;
+        async_rw_lock
+            .write(|s| {
+                s.push_str(" World");
+            })
+            .await;
 
         // Read operation should see the change
         let result = async_rw_lock.read(|s| s.clone()).await;
@@ -360,10 +372,12 @@ mod async_rwlock_trait_tests {
         assert_eq!(len, 3);
 
         // Writer modifies the data
-        async_rw_lock.write(|v| {
-            v.push(4);
-            v.push(5);
-        }).await;
+        async_rw_lock
+            .write(|v| {
+                v.push(4);
+                v.push(5);
+            })
+            .await;
 
         // Reader sees the updated data
         let sum = async_rw_lock.read(|v| v.iter().sum::<i32>()).await;
@@ -374,9 +388,9 @@ mod async_rwlock_trait_tests {
     async fn test_async_rwlock_read_lock_returns_closure_result() {
         let async_rw_lock = ArcAsyncRwLock::new(vec![10, 20, 30]);
 
-        let result = async_rw_lock.read(|v| {
-            v.iter().map(|&x| x * 2).collect::<Vec<_>>()
-        }).await;
+        let result = async_rw_lock
+            .read(|v| v.iter().map(|&x| x * 2).collect::<Vec<_>>())
+            .await;
 
         assert_eq!(result, vec![20, 40, 60]);
 
@@ -389,10 +403,12 @@ mod async_rwlock_trait_tests {
     async fn test_async_rwlock_write_lock_returns_closure_result() {
         let async_rw_lock = ArcAsyncRwLock::new(5);
 
-        let result = async_rw_lock.write(|value| {
-            *value *= 2;
-            *value
-        }).await;
+        let result = async_rw_lock
+            .write(|value| {
+                *value *= 2;
+                *value
+            })
+            .await;
 
         assert_eq!(result, 10);
 
@@ -422,7 +438,6 @@ mod async_rwlock_trait_tests {
         assert_eq!(result, Some(43));
     }
 
-
     #[tokio::test]
     async fn test_async_rwlock_mixed_read_write_operations() {
         use std::sync::Arc;
@@ -435,9 +450,11 @@ mod async_rwlock_trait_tests {
             let async_rw_lock = Arc::clone(&async_rw_lock);
             let handle = tokio::spawn(async move {
                 for _ in 0..10 {
-                    async_rw_lock.read(|value| {
-                        let _ = *value;
-                    }).await;
+                    async_rw_lock
+                        .read(|value| {
+                            let _ = *value;
+                        })
+                        .await;
                 }
             });
             handles.push(handle);
@@ -448,9 +465,11 @@ mod async_rwlock_trait_tests {
             let async_rw_lock = Arc::clone(&async_rw_lock);
             let handle = tokio::spawn(async move {
                 for _ in 0..10 {
-                    async_rw_lock.write(|value| {
-                        *value += 1;
-                    }).await;
+                    async_rw_lock
+                        .write(|value| {
+                            *value += 1;
+                        })
+                        .await;
                 }
             });
             handles.push(handle);
@@ -466,4 +485,3 @@ mod async_rwlock_trait_tests {
         assert_eq!(result, 50); // 5 writers × 10 increments each
     }
 }
-

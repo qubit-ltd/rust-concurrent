@@ -18,22 +18,20 @@
 //! Haixing Hu
 
 // Trait definitions
-mod lock;
 mod async_lock;
+mod lock;
 
 // Implementations
-mod arc_mutex;
-mod arc_rw_lock;
 mod arc_async_mutex;
 mod arc_async_rw_lock;
+mod arc_mutex;
+mod arc_rw_lock;
 
 // Re-export traits
-pub use lock::Lock;
-pub use async_lock::AsyncLock;
-
 // Re-export implementations
-pub use arc_mutex::ArcMutex;
-pub use arc_rw_lock::ArcRwLock;
 pub use arc_async_mutex::ArcAsyncMutex;
 pub use arc_async_rw_lock::ArcAsyncRwLock;
-
+pub use arc_mutex::ArcMutex;
+pub use arc_rw_lock::ArcRwLock;
+pub use async_lock::AsyncLock;
+pub use lock::Lock;

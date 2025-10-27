@@ -16,6 +16,7 @@
 //! Haixing Hu
 
 use std::sync::{Arc, RwLock};
+
 use crate::lock::Lock;
 
 /// Synchronous Read-Write Lock Wrapper
@@ -261,4 +262,3 @@ impl<T> Clone for ArcRwLock<T> {
         }
     }
 }
-

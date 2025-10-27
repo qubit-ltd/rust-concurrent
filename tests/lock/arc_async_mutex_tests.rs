@@ -10,8 +10,9 @@
 //!
 //! Tests for the ArcAsyncMutex implementation
 
-use prism3_concurrent::{ArcAsyncMutex, AsyncLock};
 use std::sync::Arc;
+
+use prism3_concurrent::{ArcAsyncMutex, AsyncLock};
 
 #[cfg(test)]
 mod arc_async_mutex_tests {
@@ -166,9 +167,7 @@ mod arc_async_mutex_tests {
     async fn test_arc_async_mutex_return_values() {
         let async_mutex = ArcAsyncMutex::new(vec![1, 2, 3, 4, 5]);
 
-        let sum = async_mutex
-            .read(|v| v.iter().sum::<i32>())
-            .await;
+        let sum = async_mutex.read(|v| v.iter().sum::<i32>()).await;
         assert_eq!(sum, 15);
 
         let len = async_mutex.read(|v| v.len()).await;
@@ -224,14 +223,10 @@ mod arc_async_mutex_tests {
             })
             .await;
 
-        let value1 = async_mutex
-            .read(|map| map.get("key1").copied())
-            .await;
+        let value1 = async_mutex.read(|map| map.get("key1").copied()).await;
         assert_eq!(value1, Some(10));
 
-        let value2 = async_mutex
-            .read(|map| map.get("key2").copied())
-            .await;
+        let value2 = async_mutex.read(|map| map.get("key2").copied()).await;
         assert_eq!(value2, Some(20));
     }
 
@@ -318,4 +313,3 @@ mod arc_async_mutex_tests {
         assert_eq!(result, Ok(20));
     }
 }
-

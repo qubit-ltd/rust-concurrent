@@ -15,9 +15,10 @@
 //! # Author
 //!
 //! Haixing Hu
-use std::future::Future;
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
+
 use tokio::sync::RwLock as AsyncRwLock;
+
 use crate::lock::AsyncLock;
 
 /// Asynchronous Read-Write Lock Wrapper
@@ -223,4 +224,3 @@ impl<T> Clone for ArcAsyncRwLock<T> {
         }
     }
 }
-

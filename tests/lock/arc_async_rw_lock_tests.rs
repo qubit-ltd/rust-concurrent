@@ -10,8 +10,9 @@
 //!
 //! Tests for the ArcAsyncRwLock implementation
 
-use prism3_concurrent::{ArcAsyncRwLock, AsyncLock};
 use std::sync::Arc;
+
+use prism3_concurrent::{ArcAsyncRwLock, AsyncLock};
 
 #[cfg(test)]
 mod arc_async_rw_lock_tests {
@@ -155,9 +156,7 @@ mod arc_async_rw_lock_tests {
             .await;
 
         // Reader sees the updated data
-        let sum = async_rw_lock
-            .read(|v| v.iter().sum::<i32>())
-            .await;
+        let sum = async_rw_lock.read(|v| v.iter().sum::<i32>()).await;
         assert_eq!(sum, 15);
     }
 
@@ -252,9 +251,7 @@ mod arc_async_rw_lock_tests {
             let handle = tokio::spawn(async move {
                 // All readers should be able to access concurrently
                 async_rw_lock
-                    .read(|data| {
-                        data.iter().sum::<i32>() + i
-                    })
+                    .read(|data| data.iter().sum::<i32>() + i)
                     .await
             });
             handles.push(handle);
@@ -349,14 +346,10 @@ mod arc_async_rw_lock_tests {
             })
             .await;
 
-        let value1 = async_rw_lock
-            .read(|map| map.get("key1").copied())
-            .await;
+        let value1 = async_rw_lock.read(|map| map.get("key1").copied()).await;
         assert_eq!(value1, Some(10));
 
-        let value2 = async_rw_lock
-            .read(|map| map.get("key2").copied())
-            .await;
+        let value2 = async_rw_lock.read(|map| map.get("key2").copied()).await;
         assert_eq!(value2, Some(20));
     }
 
@@ -377,4 +370,3 @@ mod arc_async_rw_lock_tests {
         assert_eq!(result, Ok(20));
     }
 }
-

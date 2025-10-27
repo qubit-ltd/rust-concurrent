@@ -10,9 +10,12 @@
 //!
 //! Tests for the ArcMutex implementation
 
+use std::{
+    sync::{Arc, Barrier},
+    thread,
+};
+
 use prism3_concurrent::{ArcMutex, Lock};
-use std::sync::{Arc, Barrier};
-use std::thread;
 
 #[cfg(test)]
 mod arc_mutex_tests {
@@ -285,4 +288,3 @@ mod arc_mutex_tests {
         assert_eq!(value2, Some(20));
     }
 }
-

@@ -10,9 +10,9 @@
 //!
 //! Tests for the ArcRwLock implementation
 
+use std::{sync::Arc, thread};
+
 use prism3_concurrent::{ArcRwLock, Lock};
-use std::sync::Arc;
-use std::thread;
 
 #[cfg(test)]
 mod arc_rw_lock_tests {
@@ -153,9 +153,7 @@ mod arc_rw_lock_tests {
     fn test_arc_rw_lock_read_lock_returns_closure_result() {
         let rw_lock = ArcRwLock::new(vec![10, 20, 30]);
 
-        let result = rw_lock.read(|v| {
-            v.iter().map(|&x| x * 2).collect::<Vec<_>>()
-        });
+        let result = rw_lock.read(|v| v.iter().map(|&x| x * 2).collect::<Vec<_>>());
 
         assert_eq!(result, vec![20, 40, 60]);
 
@@ -315,4 +313,3 @@ mod arc_rw_lock_tests {
         assert_eq!(value2, Some(20));
     }
 }
-

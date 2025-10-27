@@ -14,8 +14,7 @@
 //!
 //! Haixing Hu
 
-use std::future::Future;
-use std::pin::Pin;
+use std::{future::Future, pin::Pin};
 
 /// Runnable task trait
 ///
@@ -434,4 +433,3 @@ pub trait AsyncExecutorService: AsyncExecutor {
     /// A future that completes when all async tasks have finished
     fn await_termination(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
 }
-

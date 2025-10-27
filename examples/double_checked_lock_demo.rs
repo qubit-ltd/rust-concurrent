@@ -14,10 +14,14 @@
 //!
 //! Haixing Hu
 
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 use prism3_concurrent::{
-    DoubleCheckedLockExecutor,
     lock::{ArcMutex, Lock},
+    DoubleCheckedLockExecutor,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -27,45 +31,55 @@ enum ServiceError {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     // Create shared state
     let running = Arc::new(AtomicBool::new(false));
     let data = ArcMutex::new(42);
 
-    // Create executor
-    let running_clone = running.clone();
-    let executor = DoubleCheckedLockExecutor::builder()
-        .tester_fn(move || running_clone.load(Ordering::Acquire))
-        .logger(log::Level::Error, "Service is not running")
-        .build()?;
-
-    println!("Initial state: running = {}", running.load(Ordering::Acquire));
+    println!(
+        "Initial state: running = {}",
+        running.load(Ordering::Acquire)
+    );
     println!("Initial data: {}", data.read(|d| *d));
 
     // Try to execute when service is not running (should fail)
-    let result = executor.call_mut(&data, |value| {
-        *value += 1;
-        Ok::<_, ServiceError>(*value)
-    });
+    let result = DoubleCheckedLockExecutor::on(&data)
+        .when({
+            let running = running.clone();
+            move || running.load(Ordering::Acquire)
+        })
+        .call_mut(|value| {
+            *value += 1;
+            Ok::<_, ServiceError>(*value)
+        });
 
-    match result {
-        Ok(value) => println!("Unexpected success: {}", value),
-        Err(e) => println!("Expected failure: {}", e),
+    if result.success {
+        println!("Unexpected success: {}", result.value.unwrap());
+    } else {
+        println!("Expected failure: Condition not met.");
     }
 
     // Start the service
     running.store(true, Ordering::Release);
-    println!("Service started: running = {}", running.load(Ordering::Acquire));
+    println!(
+        "Service started: running = {}",
+        running.load(Ordering::Acquire)
+    );
 
     // Now execute should succeed
-    let result = executor.call_mut(&data, |value| {
-        *value += 1;
-        Ok::<_, ServiceError>(*value)
-    });
+    let result = DoubleCheckedLockExecutor::on(&data)
+        .when({
+            let running = running.clone();
+            move || running.load(Ordering::Acquire)
+        })
+        .call_mut(|value| {
+            *value += 1;
+            Ok::<_, ServiceError>(*value)
+        });
 
-    match result {
-        Ok(value) => println!("Success: new value = {}", value),
-        Err(e) => println!("Unexpected failure: {}", e),
+    if result.success {
+        println!("Success: new value = {}", result.value.unwrap());
+    } else {
+        println!("Unexpected failure: {:?}", result.error);
     }
 
     // Verify the data was updated
@@ -73,17 +87,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Stop the service
     running.store(false, Ordering::Release);
-    println!("Service stopped: running = {}", running.load(Ordering::Acquire));
+    println!(
+        "Service stopped: running = {}",
+        running.load(Ordering::Acquire)
+    );
 
     // Try to execute when service is stopped (should fail)
-    let result = executor.call_mut(&data, |value| {
-        *value += 1;
-        Ok::<_, ServiceError>(*value)
-    });
+    let result = DoubleCheckedLockExecutor::on(&data)
+        .when({
+            let running = running.clone();
+            move || running.load(Ordering::Acquire)
+        })
+        .call_mut(|value| {
+            *value += 1;
+            Ok::<_, ServiceError>(*value)
+        });
 
-    match result {
-        Ok(value) => println!("Unexpected success: {}", value),
-        Err(e) => println!("Expected failure: {}", e),
+    if result.success {
+        println!("Unexpected success: {}", result.value.unwrap());
+    } else {
+        println!("Expected failure: Condition not met.");
     }
 
     Ok(())

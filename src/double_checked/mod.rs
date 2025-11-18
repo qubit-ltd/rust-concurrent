@@ -18,11 +18,13 @@
 pub mod builder;
 pub mod config;
 pub mod error;
-pub mod executor;
+pub mod double_checked_lock;
 pub mod result;
+pub mod states;
 
 pub use builder::ExecutionBuilder;
 pub use config::{ExecutorConfig, LogConfig};
 pub use error::{BuilderError, ExecutorError};
-pub use executor::DoubleCheckedLockExecutor;
-pub use result::ExecutionResult;
+pub use double_checked_lock::DoubleCheckedLock;
+pub use result::{ExecutionContext, ExecutionResult};
+pub use states::{Conditioned, Configuring, Initial};

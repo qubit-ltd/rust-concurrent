@@ -62,12 +62,12 @@ prism3-function = "0.4.0"
 
 ```rust
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let data = ArcMutex::new(42);
 
-let result = DoubleCheckedLockExecutor::on(&data)
+let result = DoubleCheckedLock::on(&data)
     .when({
         let running = running.clone();
         move || running.load(Ordering::Acquire)
@@ -85,7 +85,7 @@ let result = DoubleCheckedLockExecutor::on(&data)
 ```rust
 use prism3_function::BoxTester;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let data = ArcMutex::new(42);
@@ -95,7 +95,7 @@ let tester = {
     BoxTester::new(move || running.load(Ordering::Acquire))
 };
 
-let result = DoubleCheckedLockExecutor::on(&data)
+let result = DoubleCheckedLock::on(&data)
     .when(tester)
     .call_mut(|value| {
         *value += 1;
@@ -110,7 +110,7 @@ let result = DoubleCheckedLockExecutor::on(&data)
 ```rust
 use prism3_function::ArcTester;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let data = ArcMutex::new(42);
@@ -123,7 +123,7 @@ let tester = {
 // ArcTester 可以被克隆和在多个线程间共享
 let tester_clone = tester.clone();
 
-let result = DoubleCheckedLockExecutor::on(&data)
+let result = DoubleCheckedLock::on(&data)
     .when(tester)
     .call_mut(|value| {
         *value += 1;
@@ -138,7 +138,7 @@ let result = DoubleCheckedLockExecutor::on(&data)
 ```rust
 use prism3_function::BoxTester;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let ready = Arc::new(AtomicBool::new(true));
@@ -157,7 +157,7 @@ let ready_tester = {
 // 组合两个 tester：两者都必须为 true
 let combined_tester = running_tester.and(ready_tester);
 
-let result = DoubleCheckedLockExecutor::on(&data)
+let result = DoubleCheckedLock::on(&data)
     .when(combined_tester)
     .call_mut(|value| {
         *value += 1;

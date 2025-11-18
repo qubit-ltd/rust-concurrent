@@ -14,7 +14,7 @@
 //! # Author
 //!
 //! Haixing Hu
-use super::ExecutionBuilder;
+use super::{states::Initial, ExecutionBuilder};
 use crate::lock::Lock;
 
 /// The entry point for the fluent API of the double-checked locking
@@ -54,7 +54,7 @@ use crate::lock::Lock;
 ///     Ordering,
 /// };
 /// use prism3_concurrent::{
-///     DoubleCheckedLockExecutor,
+///     DoubleCheckedLock,
 ///     ArcMutex,
 /// };
 ///
@@ -62,7 +62,7 @@ use crate::lock::Lock;
 /// let resource = ArcMutex::new(None::<String>);
 /// let initialized = Arc::new(AtomicBool::new(false));
 ///
-/// let result = DoubleCheckedLockExecutor::on(&resource)
+/// let result = DoubleCheckedLock::on(&resource)
 ///     .when({
 ///         let initialized = initialized.clone();
 ///         move || !initialized.load(Ordering::Acquire)
@@ -82,7 +82,7 @@ use crate::lock::Lock;
 /// ```rust
 /// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 /// use prism3_concurrent::{
-///     double_checked::DoubleCheckedLockExecutor,
+///     double_checked::DoubleCheckedLock,
 ///     lock::ArcMutex,
 /// };
 ///
@@ -92,7 +92,7 @@ use crate::lock::Lock;
 /// let connection_opened = Arc::new(AtomicBool::new(false));
 /// let transaction_rolled_back = Arc::new(AtomicBool::new(false));
 ///
-/// let result = DoubleCheckedLockExecutor::on(&balance)
+/// let result = DoubleCheckedLock::on(&balance)
 ///     .when({
 ///         let transaction_active = transaction_active.clone();
 ///         move || !transaction_active.load(Ordering::Acquire)
@@ -136,7 +136,7 @@ use crate::lock::Lock;
 /// ```rust
 /// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 /// use prism3_concurrent::{
-///     double_checked::DoubleCheckedLockExecutor,
+///     double_checked::DoubleCheckedLock,
 ///     lock::ArcRwLock,
 /// };
 ///
@@ -144,7 +144,7 @@ use crate::lock::Lock;
 /// let cache = ArcRwLock::new(Some(42));
 /// let cache_valid = Arc::new(AtomicBool::new(true));
 ///
-/// let result = DoubleCheckedLockExecutor::on(&cache)
+/// let result = DoubleCheckedLock::on(&cache)
 ///     .when({
 ///         let cache_valid = cache_valid.clone();
 ///         move || cache_valid.load(Ordering::Acquire)
@@ -160,9 +160,9 @@ use crate::lock::Lock;
 /// # Author
 ///
 /// Haixing Hu
-pub struct DoubleCheckedLockExecutor;
+pub struct DoubleCheckedLock;
 
-impl DoubleCheckedLockExecutor {
+impl DoubleCheckedLock {
     /// Starts a double-checked locking operation on the specified lock.
     ///
     /// # Arguments
@@ -171,9 +171,9 @@ impl DoubleCheckedLockExecutor {
     ///
     /// # Returns
     ///
-    /// Returns a `ExecutionBuilder` instance to configure
+    /// Returns a `ExecutionBuilder` instance in Initial state to configure
     /// and execute the operation.
-    pub fn on<'a, L, T>(lock: &'a L) -> ExecutionBuilder<'a, L, T>
+    pub fn on<'a, L, T>(lock: &'a L) -> ExecutionBuilder<'a, L, T, Initial>
     where
         L: Lock<T>,
     {

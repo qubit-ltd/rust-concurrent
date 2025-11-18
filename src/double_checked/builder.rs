@@ -6,247 +6,365 @@
  *    All rights reserved.
  *
  ******************************************************************************/
+//! # Double-Checked Locking Execution Builder
+//!
+//! Provides a fluent API builder using the typestate pattern.
+//!
+//! # Author
+//!
+//! Haixing Hu
+
 use std::{error::Error, marker::PhantomData};
 
-use prism3_function::{BoxTester, Tester};
+use prism3_function::{
+    BoxFunctionOnce, BoxMutatingFunctionOnce, BoxSupplierOnce, BoxTester, FunctionOnce,
+    MutatingFunctionOnce, SupplierOnce, Tester,
+};
 
-use super::{ExecutionResult, LogConfig};
+use super::{
+    states::{Conditioned, Configuring, Initial},
+    ExecutionContext, ExecutionResult, LogConfig,
+};
 use crate::lock::Lock;
 
-/// A builder for constructing and executing a double-checked locking operation.
+/// Execution builder (using typestate pattern)
 ///
-/// This builder uses a fluent API to configure various aspects of the
-/// operation, such as the condition tester, preparation and rollback actions,
-/// and logging.
+/// This builder uses the type system to enforce the correct call sequence
+/// at compile time.
 ///
 /// # Type Parameters
 ///
-/// * `'a` - The lifetime of the lock.
-/// * `L` - The type of the lock, which must implement `Lock<T>`.
-/// * `T` - The type of the data protected by the lock.
+/// * `'a` - Lifetime of the lock
+/// * `L` - Lock type (implements the Lock<T> trait)
+/// * `T` - Type of data protected by the lock
+/// * `State` - Current state (Initial, Configuring, Conditioned)
 ///
 /// # Author
 ///
 /// Haixing Hu
-pub struct ExecutionBuilder<'a, L, T>
+pub struct ExecutionBuilder<'a, L, T, State = Initial>
 where
     L: Lock<T>,
 {
     lock: &'a L,
-    tester: BoxTester,
-    prepare_action: Option<Box<dyn FnOnce() -> Result<(), Box<dyn Error + Send + Sync>> + 'a>>,
-    rollback_action: Option<Box<dyn FnOnce() -> Result<(), Box<dyn Error + Send + Sync>> + 'a>>,
     logger: Option<LogConfig>,
-    _phantom: PhantomData<T>,
+    tester: Option<BoxTester>,
+    prepare_action: Option<BoxSupplierOnce<Result<(), Box<dyn Error + Send + Sync>>>>,
+    _phantom: PhantomData<(T, State)>,
 }
 
-impl<'a, L, T> ExecutionBuilder<'a, L, T>
+// ============================================================================
+// Initial state: Just created, can configure logger or set conditions
+// ============================================================================
+
+impl<'a, L, T> ExecutionBuilder<'a, L, T, Initial>
 where
     L: Lock<T>,
 {
-    /// Creates a new `ExecutionBuilder` with the specified lock.
-    ///
-    /// The builder is initialized with a default tester that always returns `true`.
+    /// Creates a new execution builder
     ///
     /// # Arguments
     ///
-    /// * `lock` - A reference to an object that implements the `Lock<T>` trait.
-    ///
-    /// # Returns
-    ///
-    /// Returns a new `ExecutionBuilder` instance.
+    /// * `lock` - Reference to the lock object
     pub(super) fn new(lock: &'a L) -> Self {
         Self {
             lock,
-            tester: BoxTester::new(|| true),
-            prepare_action: None,
-            rollback_action: None,
             logger: None,
+            tester: None,
+            prepare_action: None,
             _phantom: PhantomData,
         }
     }
 
-    /// Sets the condition tester for the double-checked lock.
+    /// Configures logging (optional)
     ///
-    /// The tester is a closure that returns `true` if the operation should
-    /// proceed and `false` otherwise. It is checked once before acquiring the
-    /// lock and once after.
+    /// # State Transition
+    ///
+    /// Initial → Configuring
     ///
     /// # Arguments
     ///
-    /// * `tester` - A tester that implements the `Tester` trait.
-    pub fn when<Tst>(mut self, tester: Tst) -> Self
+    /// * `level` - Log level
+    /// * `message` - Log message
+    pub fn logger(mut self, level: log::Level, message: &str) -> ExecutionBuilder<'a, L, T, Configuring> {
+        self.logger = Some(LogConfig {
+            level,
+            message: message.to_string(),
+        });
+        ExecutionBuilder {
+            lock: self.lock,
+            logger: self.logger,
+            tester: self.tester,
+            prepare_action: self.prepare_action,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Sets the test condition (required)
+    ///
+    /// # State Transition
+    ///
+    /// Initial → Conditioned
+    ///
+    /// # Arguments
+    ///
+    /// * `tester` - The test condition
+    pub fn when<Tst>(mut self, tester: Tst) -> ExecutionBuilder<'a, L, T, Conditioned>
     where
         Tst: Tester + 'static,
     {
-        self.tester = tester.into_box();
-        self
-    }
-
-    /// Sets an action to be performed before acquiring the lock.
-    ///
-    /// This action is executed only if the initial condition check passes. If
-    /// this action fails, the entire operation is aborted.
-    ///
-    /// # Arguments
-    ///
-    /// * `prepare_action` - A closure to execute before the lock is acquired.
-    pub fn prepare<F, E>(mut self, prepare_action: F) -> Self
-    where
-        F: FnOnce() -> Result<(), E> + 'a,
-        E: Error + Send + Sync + 'static,
-    {
-        self.prepare_action = Some(Box::new(move || {
-            prepare_action().map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
-        }));
-        self
-    }
-
-    /// Sets a rollback action to be performed if the operation fails.
-    ///
-    /// The rollback action is executed if:
-    /// - The condition check fails after the lock is acquired.
-    /// - The main task fails.
-    ///
-    /// # Arguments
-    ///
-    /// * `rollback_action` - A closure to execute on failure.
-    pub fn rollback<F, E>(mut self, rollback_action: F) -> Self
-    where
-        F: FnOnce() -> Result<(), E> + 'a,
-        E: Error + Send + Sync + 'static,
-    {
-        self.rollback_action = Some(Box::new(move || {
-            rollback_action().map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
-        }));
-        self
-    }
-
-    /// Configures logging for when the condition check fails.
-    ///
-    /// # Arguments
-    ///
-    /// * `level` - The `log::Level` for the message.
-    /// * `message` - The message to log.
-    pub fn logger(mut self, level: log::Level, message: impl Into<String>) -> Self {
-        self.logger = Some(LogConfig {
-            level,
-            message: message.into(),
-        });
-        self
+        self.tester = Some(tester.into_box());
+        ExecutionBuilder {
+            lock: self.lock,
+            logger: self.logger,
+            tester: self.tester,
+            prepare_action: self.prepare_action,
+            _phantom: PhantomData,
+        }
     }
 }
 
-// Implementation of execution methods
-impl<'a, L, T> ExecutionBuilder<'a, L, T>
+// ============================================================================
+// Configuring state: Logger configured, can continue configuring or set
+// conditions
+// ============================================================================
+
+impl<'a, L, T> ExecutionBuilder<'a, L, T, Configuring>
 where
     L: Lock<T>,
 {
-    /// Executes a read-only task that returns a value.
-    pub fn call<F, R, E>(self, task: F) -> ExecutionResult<R>
-    where
-        F: FnOnce(&T) -> Result<R, E>,
-        E: Error + Send + Sync + 'static,
-    {
-        if !self.tester.test() {
-            self.handle_condition_not_met();
-            return ExecutionResult::unmet();
-        }
-        if let Some(prepare_action) = self.prepare_action {
-            if let Err(e) = prepare_action() {
-                log::error!("Prepare action failed: {}", e);
-                return ExecutionResult::fail_with_box(e);
-            }
-        }
-        let tester = &self.tester;
-        let logger = &self.logger;
-        let handle_condition_not_met = || {
-            if let Some(ref log_config) = logger {
-                log::log!(log_config.level, "{}", log_config.message);
-            }
-        };
-
-        let result = self.lock.read(|data| {
-            if !tester.test() {
-                handle_condition_not_met();
-                return ExecutionResult::unmet();
-            }
-            task(data).map_or_else(ExecutionResult::fail, ExecutionResult::succeed)
+    /// Continues configuring logging (can override previous configuration)
+    ///
+    /// # State Transition
+    ///
+    /// Configuring → Configuring
+    ///
+    /// # Arguments
+    ///
+    /// * `level` - Log level
+    /// * `message` - Log message
+    pub fn logger(mut self, level: log::Level, message: &str) -> Self {
+        self.logger = Some(LogConfig {
+            level,
+            message: message.to_string(),
         });
-
-        if !result.success {
-            if let Some(rollback_action) = self.rollback_action {
-                if let Err(e) = rollback_action() {
-                    log::error!("Rollback action failed: {}", e);
-                }
-            }
-        }
-        result
+        self
     }
 
-    /// Executes a read-write task that returns a value.
-    pub fn call_mut<F, R, E>(self, task: F) -> ExecutionResult<R>
+    /// Sets the test condition (required)
+    ///
+    /// # State Transition
+    ///
+    /// Configuring → Conditioned
+    ///
+    /// # Arguments
+    ///
+    /// * `tester` - The test condition
+    pub fn when<Tst>(mut self, tester: Tst) -> ExecutionBuilder<'a, L, T, Conditioned>
     where
-        F: FnOnce(&mut T) -> Result<R, E>,
+        Tst: Tester + 'static,
+    {
+        self.tester = Some(tester.into_box());
+        ExecutionBuilder {
+            lock: self.lock,
+            logger: self.logger,
+            tester: self.tester,
+            prepare_action: self.prepare_action,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+// ============================================================================
+// Conditioned state: Condition set, can prepare and execute
+// ============================================================================
+
+impl<'a, L, T> ExecutionBuilder<'a, L, T, Conditioned>
+where
+    L: Lock<T>,
+    T: 'static,
+{
+    /// Sets prepare action (optional, executed between first check and locking)
+    ///
+    /// # State Transition
+    ///
+    /// Conditioned → Conditioned
+    ///
+    /// # Arguments
+    ///
+    /// * `prepare_action` - Any type that implements
+    ///   `SupplierOnce<Result<(), E>>`
+    pub fn prepare<S, E>(mut self, prepare_action: S) -> Self
+    where
+        S: SupplierOnce<Result<(), E>> + 'static,
         E: Error + Send + Sync + 'static,
     {
-        if !self.tester.test() {
-            self.handle_condition_not_met();
-            return ExecutionResult::unmet();
-        }
-        if let Some(prepare_action) = self.prepare_action {
-            if let Err(e) = prepare_action() {
-                log::error!("Prepare action failed: {}", e);
-                return ExecutionResult::fail_with_box(e);
-            }
-        }
-        let tester = &self.tester;
-        let logger = &self.logger;
-        let handle_condition_not_met = || {
-            if let Some(ref log_config) = logger {
-                log::log!(log_config.level, "{}", log_config.message);
-            }
-        };
-
-        let result = self.lock.write(|data| {
-            if !tester.test() {
-                handle_condition_not_met();
-                return ExecutionResult::unmet();
-            }
-            task(data).map_or_else(ExecutionResult::fail, ExecutionResult::succeed)
-        });
-
-        if !result.success {
-            if let Some(rollback_action) = self.rollback_action {
-                if let Err(e) = rollback_action() {
-                    log::error!("Rollback action failed: {}", e);
-                }
-            }
-        }
-        result
+        let boxed = prepare_action.into_box();
+        self.prepare_action = Some(BoxSupplierOnce::new(move || {
+            boxed.get().map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
+        }));
+        self
     }
 
-    /// Executes a read-only task with no return value.
-    pub fn execute<F, E>(self, task: F) -> ExecutionResult<()>
+    /// Executes a read-only task (with return value)
+    ///
+    /// # Execution Flow
+    ///
+    /// 1. First condition check (outside lock)
+    /// 2. Execute prepare action (if any)
+    /// 3. Acquire lock
+    /// 4. Second condition check (inside lock)
+    /// 5. Execute task
+    ///
+    /// # State Transition
+    ///
+    /// Conditioned → ExecutionContext<R>
+    ///
+    /// # Arguments
+    ///
+    /// * `task` - Any type that implements `FunctionOnce<T, Result<R, E>>`
+    pub fn call<F, R, E>(self, task: F) -> ExecutionContext<R>
     where
-        F: FnOnce(&T) -> Result<(), E>,
+        F: FunctionOnce<T, Result<R, E>> + 'static,
+        E: Error + Send + Sync + 'static,
+        R: 'static,
+    {
+        let task_boxed: BoxFunctionOnce<T, Result<R, E>> = task.into_box();
+        let result = self.execute_with_read_lock(task_boxed);
+        ExecutionContext::new(result)
+    }
+
+    /// Executes a read-write task (with return value)
+    ///
+    /// # State Transition
+    ///
+    /// Conditioned → ExecutionContext<R>
+    ///
+    /// # Arguments
+    ///
+    /// * `task` - Any type that implements
+    ///   `MutatingFunctionOnce<T, Result<R, E>>`
+    pub fn call_mut<F, R, E>(self, task: F) -> ExecutionContext<R>
+    where
+        F: MutatingFunctionOnce<T, Result<R, E>> + 'static,
+        E: Error + Send + Sync + 'static,
+        R: 'static,
+    {
+        let task_boxed: BoxMutatingFunctionOnce<T, Result<R, E>> = task.into_box();
+        let result = self.execute_with_write_lock(task_boxed);
+        ExecutionContext::new(result)
+    }
+
+    /// Executes a read-only task (without return value)
+    ///
+    /// # Arguments
+    ///
+    /// * `task` - Any type that implements `FunctionOnce<T, Result<(), E>>`
+    pub fn execute<F, E>(self, task: F) -> ExecutionContext<()>
+    where
+        F: FunctionOnce<T, Result<(), E>> + 'static,
         E: Error + Send + Sync + 'static,
     {
         self.call(task)
     }
 
-    /// Executes a read-write task with no return value.
-    pub fn execute_mut<F, E>(self, task: F) -> ExecutionResult<()>
+    /// Executes a read-write task (without return value)
+    ///
+    /// # Arguments
+    ///
+    /// * `task` - Any type that implements
+    ///   `MutatingFunctionOnce<T, Result<(), E>>`
+    pub fn execute_mut<F, E>(self, task: F) -> ExecutionContext<()>
     where
-        F: FnOnce(&mut T) -> Result<(), E>,
+        F: MutatingFunctionOnce<T, Result<(), E>> + 'static,
         E: Error + Send + Sync + 'static,
     {
         self.call_mut(task)
     }
 
-    fn handle_condition_not_met(&self) {
-        if let Some(ref log_config) = self.logger {
-            log::log!(log_config.level, "{}", log_config.message);
+    // ========================================================================
+    // Internal helper methods
+    // ========================================================================
+
+    fn execute_with_read_lock<R, E>(mut self, task: BoxFunctionOnce<T, Result<R, E>>) -> ExecutionResult<R>
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        // 第一次检查（锁外）
+        let tester = self.tester.take().expect("Tester must be set in Conditioned state");
+        if !tester.test() {
+            if let Some(ref log_config) = self.logger {
+                log::log!(log_config.level, "{}", log_config.message);
+            }
+            return ExecutionResult::unmet();
         }
+
+        // 执行准备动作
+        if let Some(prepare_action) = self.prepare_action.take() {
+            if let Err(e) = prepare_action.get() {
+                log::error!("Prepare action failed: {}", e);
+                return ExecutionResult::fail_with_box(e);
+            }
+        }
+
+        // 获取锁并执行
+        let logger = self.logger;
+        let handle_condition_not_met = move || {
+            if let Some(ref log_config) = logger {
+                log::log!(log_config.level, "{}", log_config.message);
+            }
+        };
+
+        self.lock.read(|data| {
+            // 第二次检查（锁内）
+            if !tester.test() {
+                handle_condition_not_met();
+                return ExecutionResult::unmet();
+            }
+            // 执行任务
+            task.apply(data)
+                .map_or_else(ExecutionResult::fail, ExecutionResult::succeed)
+        })
+    }
+
+    fn execute_with_write_lock<R, E>(mut self, task: BoxMutatingFunctionOnce<T, Result<R, E>>) -> ExecutionResult<R>
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        // 第一次检查（锁外）
+        let tester = self.tester.take().expect("Tester must be set in Conditioned state");
+        if !tester.test() {
+            if let Some(ref log_config) = self.logger {
+                log::log!(log_config.level, "{}", log_config.message);
+            }
+            return ExecutionResult::unmet();
+        }
+
+        // 执行准备动作
+        if let Some(prepare_action) = self.prepare_action.take() {
+            if let Err(e) = prepare_action.get() {
+                log::error!("Prepare action failed: {}", e);
+                return ExecutionResult::fail_with_box(e);
+            }
+        }
+
+        // 获取锁并执行
+        let logger = self.logger;
+        let handle_condition_not_met = move || {
+            if let Some(ref log_config) = logger {
+                log::log!(log_config.level, "{}", log_config.message);
+            }
+        };
+
+        self.lock.write(|data| {
+            // 第二次检查（锁内）
+            if !tester.test() {
+                handle_condition_not_met();
+                return ExecutionResult::unmet();
+            }
+            // 执行任务
+            task.apply(data)
+                .map_or_else(ExecutionResult::fail, ExecutionResult::succeed)
+        })
     }
 }

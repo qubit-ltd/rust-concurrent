@@ -21,7 +21,7 @@ use std::sync::{
 
 use prism3_concurrent::{
     lock::{ArcMutex, Lock},
-    DoubleCheckedLockExecutor,
+    DoubleCheckedLock,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -42,15 +42,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Initial data: {}", data.read(|d| *d));
 
     // Try to execute when service is not running (should fail)
-    let result = DoubleCheckedLockExecutor::on(&data)
+    let result = DoubleCheckedLock::on(&data)
         .when({
             let running = running.clone();
             move || running.load(Ordering::Acquire)
         })
-        .call_mut(|value| {
+        .call_mut(|value: &mut i32| {
             *value += 1;
             Ok::<_, ServiceError>(*value)
-        });
+        })
+        .get_result();
 
     if result.success {
         println!("Unexpected success: {}", result.value.unwrap());
@@ -66,15 +67,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Now execute should succeed
-    let result = DoubleCheckedLockExecutor::on(&data)
+    let result = DoubleCheckedLock::on(&data)
         .when({
             let running = running.clone();
             move || running.load(Ordering::Acquire)
         })
-        .call_mut(|value| {
+        .call_mut(|value: &mut i32| {
             *value += 1;
             Ok::<_, ServiceError>(*value)
-        });
+        })
+        .get_result();
 
     if result.success {
         println!("Success: new value = {}", result.value.unwrap());
@@ -93,15 +95,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Try to execute when service is stopped (should fail)
-    let result = DoubleCheckedLockExecutor::on(&data)
+    let result = DoubleCheckedLock::on(&data)
         .when({
             let running = running.clone();
             move || running.load(Ordering::Acquire)
         })
-        .call_mut(|value| {
+        .call_mut(|value: &mut i32| {
             *value += 1;
             Ok::<_, ServiceError>(*value)
-        });
+        })
+        .get_result();
 
     if result.success {
         println!("Unexpected success: {}", result.value.unwrap());

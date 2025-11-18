@@ -6,4 +6,4 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-mod executor_tests;
+mod double_checked_lock_tests;

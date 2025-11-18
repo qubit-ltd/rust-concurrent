@@ -13,8 +13,9 @@
 //! # Author
 //!
 //! Haixing Hu
-
 use std::error::Error;
+
+use prism3_function::{BoxSupplierOnce, SupplierOnce};
 
 /// Task execution result
 ///
@@ -50,10 +51,12 @@ pub struct ExecutionResult<T> {
     /// Whether the execution was successful
     pub success: bool,
 
-    /// The return value when execution succeeds (only present when success = true)
+    /// The return value when execution succeeds (only present when success =
+    /// true)
     pub value: Option<T>,
 
-    /// The error information when execution fails (only present when success = false)
+    /// The error information when execution fails (only present when success =
+    /// false)
     pub error: Option<Box<dyn Error + Send + Sync>>,
 }
 
@@ -93,7 +96,8 @@ impl<T> ExecutionResult<T> {
     ///
     /// # Returns
     ///
-    /// Returns a new `ExecutionResult` with success = false and no error message
+    /// Returns a new `ExecutionResult` with success = false and no error
+    /// message
     ///
     /// # Example
     ///
@@ -158,7 +162,8 @@ impl<T> ExecutionResult<T> {
     /// # Returns
     ///
     /// * `Ok(T)` - If execution was successful, returns the value
-    /// * `Err(Box<dyn Error + Send + Sync>)` - If execution failed, returns the error
+    /// * `Err(Box<dyn Error + Send + Sync>)` - If execution failed, returns the
+    ///   error
     ///
     /// # Example
     ///
@@ -177,5 +182,116 @@ impl<T> ExecutionResult<T> {
         } else {
             Err(self.error.unwrap_or_else(|| "Unknown error".into()))
         }
+    }
+}
+
+/// Execution context (state after task execution)
+///
+/// This type provides rollback and result retrieval functionality after
+/// task execution. It holds the execution result and optionally sets
+/// rollback operations.
+///
+/// # Type Parameters
+///
+/// * `T` - The type of the task return value
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
+///
+/// let data = ArcMutex::new(42);
+/// let context = DoubleCheckedLock::on(&data)
+///     .when(|| true)
+///     .call(|value| Ok(*value));
+///
+/// // Optionally set rollback
+/// let result = context
+///     .rollback(|| {
+///         println!("Rolling back");
+///         Ok(())
+///     })
+///     .get_result();
+/// ```
+///
+/// # Author
+///
+/// Haixing Hu
+pub struct ExecutionContext<T> {
+    result: ExecutionResult<T>,
+    rollback_action: Option<BoxSupplierOnce<Result<(), Box<dyn Error + Send + Sync>>>>,
+}
+
+impl<T> ExecutionContext<T> {
+    /// Creates a new execution context
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - The execution result
+    pub(super) fn new(result: ExecutionResult<T>) -> Self {
+        Self {
+            result,
+            rollback_action: None,
+        }
+    }
+
+    /// Sets rollback action (optional, only executed on failure)
+    ///
+    /// # Arguments
+    ///
+    /// * `rollback_action` - Any type that implements
+    ///   `SupplierOnce<Result<(), E>>`
+    ///
+    /// # Note
+    ///
+    /// Rollback is only set and executed when `success = false`
+    pub fn rollback<S, E>(mut self, rollback_action: S) -> Self
+    where
+        S: SupplierOnce<Result<(), E>> + 'static,
+        E: Error + Send + Sync + 'static,
+    {
+        if !self.result.success {
+            let boxed = rollback_action.into_box();
+            self.rollback_action = Some(BoxSupplierOnce::new(move || {
+                boxed.get().map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
+            }));
+        }
+        self
+    }
+
+    /// Gets the execution result (consumes the context)
+    ///
+    /// If rollback is set and execution failed, rollback will be executed
+    /// before returning the result
+    pub fn get_result(mut self) -> ExecutionResult<T> {
+        if !self.result.success {
+            if let Some(rollback_action) = self.rollback_action.take() {
+                if let Err(e) = rollback_action.get() {
+                    log::error!("Rollback action failed: {}", e);
+                }
+            }
+        }
+        self.result
+    }
+
+    /// Checks the execution result (does not consume the context)
+    pub fn peek_result(&self) -> &ExecutionResult<T> {
+        &self.result
+    }
+
+    /// Checks if execution was successful
+    pub fn is_success(&self) -> bool {
+        self.result.success
+    }
+}
+
+// Convenience methods for cases without return values
+impl ExecutionContext<()> {
+    /// Completes execution (for operations without return values)
+    ///
+    /// Returns whether the execution was successful
+    pub fn finish(self) -> bool {
+        let result = self.get_result();
+        result.success
     }
 }

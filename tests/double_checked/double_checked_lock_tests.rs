@@ -18,7 +18,7 @@ mod tests {
     };
 
     use prism3_concurrent::{
-        double_checked::DoubleCheckedLockExecutor,
+        double_checked::DoubleCheckedLock,
         lock::{ArcMutex, ArcRwLock, Lock},
     };
 
@@ -38,15 +38,16 @@ mod tests {
         let data = ArcMutex::new(10);
         let condition = Arc::new(AtomicBool::new(true));
 
-        let result = DoubleCheckedLockExecutor::on(&data)
+        let result = DoubleCheckedLock::on(&data)
             .when({
                 let condition = condition.clone();
                 move || condition.load(Ordering::Acquire)
             })
-            .call_mut(|value| {
+            .call_mut(|value: &mut i32| {
                 *value += 1;
                 Ok::<i32, TestError>(*value)
-            });
+            })
+            .get_result();
 
         assert!(result.success);
         assert_eq!(result.value, Some(11));
@@ -58,12 +59,13 @@ mod tests {
         let data = ArcRwLock::new(10);
         let condition = Arc::new(AtomicBool::new(true));
 
-        let result = DoubleCheckedLockExecutor::on(&data)
+        let result = DoubleCheckedLock::on(&data)
             .when({
                 let condition = condition.clone();
                 move || condition.load(Ordering::Acquire)
             })
-            .call(|value| Ok::<i32, TestError>(*value));
+            .call(|value: &i32| Ok::<i32, TestError>(*value))
+            .get_result();
 
         assert!(result.success);
         assert_eq!(result.value, Some(10));
@@ -75,15 +77,16 @@ mod tests {
         let data = ArcMutex::new(10);
         let condition = Arc::new(AtomicBool::new(false));
 
-        let result = DoubleCheckedLockExecutor::on(&data)
+        let result = DoubleCheckedLock::on(&data)
             .when({
                 let condition = condition.clone();
                 move || condition.load(Ordering::Acquire)
             })
-            .call_mut(|value| {
+            .call_mut(|value: &mut i32| {
                 *value += 1;
                 Ok::<i32, TestError>(*value)
-            });
+            })
+            .get_result();
 
         assert!(!result.success);
         assert!(result.value.is_none());
@@ -97,10 +100,14 @@ mod tests {
         let condition = Arc::new(AtomicBool::new(true));
         let rollback_called = Arc::new(AtomicBool::new(false));
 
-        let result = DoubleCheckedLockExecutor::on(&data)
+        let result = DoubleCheckedLock::on(&data)
             .when({
                 let condition = condition.clone();
                 move || condition.load(Ordering::Acquire)
+            })
+            .call_mut(|value: &mut i32| {
+                *value += 1;
+                Err::<i32, _>(TestError("task failed"))
             })
             .rollback({
                 let rollback_called = rollback_called.clone();
@@ -109,10 +116,7 @@ mod tests {
                     Ok::<(), TestError>(())
                 }
             })
-            .call_mut(|value| {
-                *value += 1;
-                Err::<i32, _>(TestError("task failed"))
-            });
+            .get_result();
 
         assert!(!result.success);
         assert!(result.value.is_none());
@@ -126,16 +130,17 @@ mod tests {
         let data = ArcMutex::new(10);
         let condition = Arc::new(AtomicBool::new(true));
 
-        let result = DoubleCheckedLockExecutor::on(&data)
+        let result = DoubleCheckedLock::on(&data)
             .when({
                 let condition = condition.clone();
                 move || condition.load(Ordering::Acquire)
             })
             .prepare(|| Err(TestError("prepare failed")))
-            .call_mut(|value| {
+            .call_mut(|value: &mut i32| {
                 *value += 1;
                 Ok::<i32, TestError>(*value)
-            });
+            })
+            .get_result();
 
         assert!(!result.success);
         assert!(result.value.is_none());

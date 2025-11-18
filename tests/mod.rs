@@ -10,5 +10,5 @@
 //!
 //! Tests for various concurrent utility functions.
 
-mod atomic;
 mod double_checked;
+mod lock;

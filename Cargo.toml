@@ -3,7 +3,7 @@ name = "prism3-concurrent"
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.70"
-authors = ["Hu Haixing <starfish.hu@gmail.com>"]
+authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/3-prism/prism3-rust-concurrent"
 description = "Concurrent utilities library providing thread pools, task scheduling, synchronization primitives and other concurrent programming tools"
@@ -29,8 +29,10 @@ doctest = false
 [dependencies]
 # Async runtime
 tokio = { version = "1.0", features = ["sync"] }
+# Core utilities
+prism3-core = "0.2.0"
 # Functional programming utilities
-prism3-function = "0.4.0"
+prism3-function = "0.5.0"
 # Error handling
 thiserror = "2.0.17"
 # Logging

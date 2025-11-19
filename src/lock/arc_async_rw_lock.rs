@@ -15,7 +15,10 @@
 //! # Author
 //!
 //! Haixing Hu
-use std::{future::Future, sync::Arc};
+use std::{
+    future::Future,
+    sync::Arc,
+};
 
 use tokio::sync::RwLock as AsyncRwLock;
 

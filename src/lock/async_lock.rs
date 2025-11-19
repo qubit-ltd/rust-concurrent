@@ -16,7 +16,10 @@
 //! Haixing Hu
 use std::future::Future;
 
-use tokio::sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
+use tokio::sync::{
+    Mutex as AsyncMutex,
+    RwLock as AsyncRwLock,
+};
 
 /// Unified asynchronous lock trait
 ///

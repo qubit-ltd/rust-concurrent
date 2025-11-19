@@ -15,7 +15,10 @@
 //!
 //! Haixing Hu
 
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    Arc,
+    RwLock,
+};
 
 use crate::lock::Lock;
 

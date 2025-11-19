@@ -15,7 +15,10 @@
 //!
 //! Haixing Hu
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc,
+    Mutex,
+};
 
 use crate::lock::Lock;
 

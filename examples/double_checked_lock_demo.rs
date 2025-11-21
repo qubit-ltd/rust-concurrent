@@ -31,6 +31,7 @@ use prism3_concurrent::{
 };
 
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 enum ServiceError {
     #[error("Service is not running")]
     NotRunning,

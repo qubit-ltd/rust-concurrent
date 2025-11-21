@@ -39,6 +39,8 @@ prism3-atomic = "0.2.0"
 thiserror = "2.0.17"
 # Logging
 log = "0.4"
+# High-performance synchronization primitives
+parking_lot = "0.12"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time"] }

@@ -21,6 +21,8 @@ use std::sync::{
     RwLock,
 };
 
+use parking_lot::Mutex as ParkingLotMutex;
+
 /// Unified synchronous lock trait
 ///
 /// Provides a unified interface for different types of synchronous locks,
@@ -355,5 +357,59 @@ impl<T: ?Sized> Lock<T> for RwLock<T> {
         } else {
             None
         }
+    }
+}
+
+/// High-performance synchronous mutex implementation of the Lock trait
+///
+/// This implementation uses the `parking_lot` crate's `Mutex` type to provide
+/// a high-performance synchronous lock. Both read and write operations acquire
+/// the same exclusive lock, ensuring thread safety with better performance
+/// than the standard library's Mutex.
+///
+/// # Type Parameters
+///
+/// * `T` - The type of data protected by the lock
+///
+/// # Performance Characteristics
+///
+/// The parking_lot Mutex is generally faster than std::sync::Mutex due to:
+/// - More efficient lock acquisition and release
+/// - Better handling of contended locks
+/// - Reduced memory overhead
+/// - No risk of lock poisoning (panics don't poison the lock)
+///
+/// # Author
+///
+/// Haixing Hu
+impl<T: ?Sized> Lock<T> for ParkingLotMutex<T> {
+    fn read<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R,
+    {
+        let guard = self.lock();
+        f(&*guard)
+    }
+
+    fn write<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut guard = self.lock();
+        f(&mut *guard)
+    }
+
+    fn try_read<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.try_lock().map(|guard| f(&*guard))
+    }
+
+    fn try_write<R, F>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.try_lock().map(|mut guard| f(&mut *guard))
     }
 }

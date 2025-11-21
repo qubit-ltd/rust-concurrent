@@ -47,13 +47,13 @@ use crate::lock::AsyncLock;
 ///     let counter = Arc::new(counter);
 ///
 ///     // Asynchronously modify data
-///     counter.with_lock(|c| {
+///     counter.write(|c| {
 ///         *c += 1;
 ///         println!("Counter: {}", *c);
 ///     }).await;
 ///
 ///     // Try to acquire lock
-///     if let Some(value) = counter.try_with_lock(|c| *c) {
+///     if let Some(value) = counter.try_read(|c| *c) {
 ///         println!("Current value: {}", value);
 ///     }
 /// }
@@ -121,7 +121,7 @@ where
     /// async fn main() {
     ///     let counter = ArcAsyncMutex::new(0);
     ///
-    ///     let result = counter.with_lock(|c| {
+    ///     let result = counter.write(|c| {
     ///         *c += 1;
     ///         *c
     ///     }).await;

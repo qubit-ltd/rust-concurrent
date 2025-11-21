@@ -6,27 +6,29 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! # Synchronous Mutex Wrapper
+
+//! # Synchronous Mutex Wrapper (Parking Lot)
 //!
-//! Provides an Arc-wrapped synchronous mutex for protecting shared
-//! data in multi-threaded environments.
+//! Provides an Arc-wrapped synchronous mutex using parking_lot::Mutex
+//! for protecting shared data in multi-threaded environments.
 //!
 //! # Author
 //!
 //! Haixing Hu
 
-use std::sync::{
-    Arc,
-    Mutex,
-};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use crate::lock::Lock;
 
-/// Synchronous Mutex Wrapper
+/// Synchronous Mutex Wrapper (Parking Lot)
 ///
-/// Provides an encapsulation of synchronous mutex for protecting
-/// shared data in synchronous environments. Supports safe access and
-/// modification of shared data across multiple threads.
+/// Provides an encapsulation of synchronous mutex using parking_lot::Mutex
+/// for protecting shared data in synchronous environments. Supports safe
+/// access and modification of shared data across multiple threads.
+/// Compared to std::sync::Mutex, parking_lot::Mutex provides better
+/// performance and more ergonomic API.
 ///
 /// # Features
 ///
@@ -35,6 +37,8 @@ use crate::lock::Lock;
 /// - Thread-safe, supports multi-threaded sharing
 /// - Automatic lock management through RAII ensures proper lock
 ///   release
+/// - Better performance compared to std::sync::Mutex
+/// - More ergonomic API with no unwrap() calls
 ///
 /// # Usage Example
 ///
@@ -46,13 +50,13 @@ use crate::lock::Lock;
 /// let counter = Arc::new(counter);
 ///
 /// // Synchronously modify data
-/// counter.with_lock(|c| {
+/// counter.write(|c| {
 ///     *c += 1;
 ///     println!("Counter: {}", *c);
 /// });
 ///
 /// // Try to acquire lock
-/// if let Some(value) = counter.try_with_lock(|c| *c) {
+/// if let Some(value) = counter.try_read(|c| *c) {
 ///     println!("Current value: {}", value);
 /// }
 /// ```
@@ -119,7 +123,7 @@ impl<T> Lock<T> for ArcMutex<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock();
         f(&*guard)
     }
 
@@ -155,7 +159,7 @@ impl<T> Lock<T> for ArcMutex<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        let mut guard = self.inner.lock().unwrap();
+        let mut guard = self.inner.lock();
         f(&mut *guard)
     }
 
@@ -192,7 +196,7 @@ impl<T> Lock<T> for ArcMutex<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        if let Ok(guard) = self.inner.try_lock() {
+        if let Some(guard) = self.inner.try_lock() {
             Some(f(&*guard))
         } else {
             None
@@ -235,7 +239,7 @@ impl<T> Lock<T> for ArcMutex<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        if let Ok(mut guard) = self.inner.try_lock() {
+        if let Some(mut guard) = self.inner.try_lock() {
             Some(f(&mut *guard))
         } else {
             None

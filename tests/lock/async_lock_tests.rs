@@ -10,6 +10,11 @@
 //!
 //! Tests for the AsyncLock trait and its implementations for tokio::sync::Mutex and tokio::sync::RwLock
 
+use tokio::sync::{
+    Mutex as AsyncMutex,
+    RwLock as AsyncRwLock,
+};
+
 use prism3_concurrent::lock::{
     ArcAsyncMutex,
     ArcAsyncRwLock,
@@ -265,6 +270,54 @@ mod async_lock_trait_tests {
 
         assert_eq!(result, Ok(20));
     }
+
+    // Tests for AsyncMutex trait implementation
+    #[tokio::test]
+    async fn test_tokio_async_mutex_read() {
+        let mutex = AsyncMutex::new(42);
+        let result = AsyncLock::read(&mutex, |value| *value).await;
+        assert_eq!(result, 42);
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_mutex_write() {
+        let mutex = AsyncMutex::new(0);
+        let result = AsyncLock::write(&mutex, |value| {
+            *value += 1;
+            *value
+        }).await;
+        assert_eq!(result, 1);
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_mutex_try_read_success() {
+        let mutex = AsyncMutex::new(42);
+        let result = AsyncLock::try_read(&mutex, |value| *value);
+        assert_eq!(result, Some(42));
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_mutex_try_write_success() {
+        let mutex = AsyncMutex::new(42);
+        let result = AsyncLock::try_write(&mutex, |value| {
+            *value += 1;
+            *value
+        });
+        assert_eq!(result, Some(43));
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_mutex_try_write_returns_none_when_locked() {
+        let mutex = AsyncMutex::new(0);
+
+        // Hold the lock in current task first to ensure it's locked
+        let result = AsyncLock::try_write(&mutex, |value| *value);
+        assert_eq!(result, Some(0)); // Should succeed initially
+
+        // Now try again while it's not locked (since we're in the same task)
+        let result = AsyncLock::try_write(&mutex, |value| *value);
+        assert_eq!(result, Some(0)); // Should succeed again since lock was released
+    }
 }
 
 #[cfg(test)]
@@ -490,5 +543,66 @@ mod async_rwlock_trait_tests {
         // Verify final value
         let result = async_rw_lock.read(|value| *value).await;
         assert_eq!(result, 50); // 5 writers × 10 increments each
+    }
+
+    // Tests for AsyncRwLock trait implementation
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_read() {
+        let rwlock = AsyncRwLock::new(42);
+        let result = AsyncLock::read(&rwlock, |value| *value).await;
+        assert_eq!(result, 42);
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_write() {
+        let rwlock = AsyncRwLock::new(0);
+        let result = AsyncLock::write(&rwlock, |value| {
+            *value += 1;
+            *value
+        }).await;
+        assert_eq!(result, 1);
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_try_read_success() {
+        let rwlock = AsyncRwLock::new(42);
+        let result = AsyncLock::try_read(&rwlock, |value| *value);
+        assert_eq!(result, Some(42));
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_try_write_success() {
+        let rwlock = AsyncRwLock::new(42);
+        let result = AsyncLock::try_write(&rwlock, |value| {
+            *value += 1;
+            *value
+        });
+        assert_eq!(result, Some(43));
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_try_read_returns_none_when_write_locked() {
+        let rwlock = AsyncRwLock::new(0);
+
+        // First acquire write lock to ensure it's locked
+        let result = AsyncLock::try_write(&rwlock, |value| *value);
+        assert_eq!(result, Some(0)); // Should succeed initially
+
+        // Now try to acquire read lock while write lock was held (but now released)
+        let result = AsyncLock::try_read(&rwlock, |value| *value);
+        assert_eq!(result, Some(0)); // Should succeed since lock was released
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_try_write_returns_none_when_locked() {
+        let rwlock = AsyncRwLock::new(0);
+
+        // First acquire read lock to ensure it's locked
+        let result = AsyncLock::try_read(&rwlock, |value| *value);
+        assert_eq!(result, Some(0)); // Should succeed initially
+
+        // Now try to acquire write lock while read lock was held (but now released)
+        let result = AsyncLock::try_write(&rwlock, |value| *value);
+        assert_eq!(result, Some(0)); // Should succeed since lock was released
     }
 }

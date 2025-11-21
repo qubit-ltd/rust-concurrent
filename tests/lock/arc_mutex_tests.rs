@@ -113,68 +113,46 @@ mod arc_mutex_tests {
     }
 
     #[test]
-    fn test_arc_mutex_try_with_lock_poisoned() {
+    fn test_arc_mutex_try_write_with_lock_returns_none() {
         let mutex = Arc::new(ArcMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
         let mutex_clone = mutex.clone();
         let barrier_clone = barrier.clone();
 
-        // Hold the lock and panic in another thread
+        // Hold the lock in another thread
         let handle = thread::spawn(move || {
             mutex_clone.write(|value| {
                 *value += 1;
-                // Notify main thread that lock has been acquired
+                // Notify main thread that it can try to acquire the lock
                 barrier_clone.wait();
-                // Panic while holding the lock, causing the lock to be poisoned
-                panic!("intentional panic to poison the lock");
+                // Hold the lock for some time
+                thread::sleep(std::time::Duration::from_millis(100));
             });
         });
 
         // Wait for child thread to acquire the lock
         barrier.wait();
 
-        // Wait for child thread to complete panicking (will poison the lock)
-        let _ = handle.join();
-
-        // Try to acquire poisoned lock, should return None
-        let result = mutex.try_read(|value| *value);
+        // Try to acquire write lock, should return None
+        let result = mutex.try_write(|value| {
+            *value += 1;
+            *value
+        });
         assert!(
             result.is_none(),
-            "Expected None for poisoned lock, got {:?}",
-            result
+            "Expected None when lock is held by another thread"
         );
-    }
 
-    #[test]
-    #[should_panic(expected = "PoisonError")]
-    fn test_arc_mutex_with_lock_poisoned() {
-        let mutex = Arc::new(ArcMutex::new(0));
-        let barrier = Arc::new(Barrier::new(2));
+        // Wait for child thread to complete
+        handle.join().unwrap();
 
-        let mutex_clone = mutex.clone();
-        let barrier_clone = barrier.clone();
-
-        // Hold the lock and panic in another thread
-        let handle = thread::spawn(move || {
-            mutex_clone.write(|value| {
-                *value += 1;
-                // Notify main thread that lock has been acquired
-                barrier_clone.wait();
-                // Panic while holding the lock, causing the lock to be poisoned
-                panic!("intentional panic to poison the lock");
-            });
+        // Now should be able to successfully acquire the write lock
+        let result = mutex.try_write(|value| {
+            *value += 1;
+            *value
         });
-
-        // Wait for child thread to acquire the lock
-        barrier.wait();
-
-        // Wait for child thread to complete panicking (will poison the lock)
-        let _ = handle.join();
-
-        // Try to acquire poisoned lock with read (not try_read)
-        // This should panic because read uses unwrap()
-        mutex.read(|_| {});
+        assert_eq!(result, Some(2));
     }
 
     #[test]
@@ -292,5 +270,107 @@ mod arc_mutex_tests {
 
         let value2 = mutex.read(|map| map.get("key2").copied());
         assert_eq!(value2, Some(20));
+    }
+
+    #[test]
+    fn test_arc_mutex_read_write_interaction() {
+        let mutex = ArcMutex::new(0);
+
+        // Multiple reads should work
+        let read1 = mutex.read(|v| *v);
+        let read2 = mutex.read(|v| *v);
+        assert_eq!(read1, 0);
+        assert_eq!(read2, 0);
+
+        // Write should change the value
+        mutex.write(|v| *v = 42);
+
+        // Subsequent reads should see the change
+        let read3 = mutex.read(|v| *v);
+        assert_eq!(read3, 42);
+    }
+
+    #[test]
+    fn test_arc_mutex_try_read_try_write_interaction() {
+        let mutex = ArcMutex::new(0);
+
+        // Try read should work
+        let result = mutex.try_read(|v| *v);
+        assert_eq!(result, Some(0));
+
+        // Try write should work
+        let result = mutex.try_write(|v| {
+            *v = 42;
+            *v
+        });
+        assert_eq!(result, Some(42));
+
+        // Verify the change
+        let result = mutex.try_read(|v| *v);
+        assert_eq!(result, Some(42));
+    }
+
+    #[test]
+    fn test_arc_mutex_zero_sized_types() {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        struct ZeroSized;
+
+        let mutex = ArcMutex::new(ZeroSized);
+
+        let result = mutex.read(|z| *z);
+        assert_eq!(result, ZeroSized);
+
+        mutex.write(|z| {
+            // Zero-sized types can't be modified, but we can verify access
+            let _ = z;
+        });
+    }
+
+    #[test]
+    fn test_arc_mutex_with_option() {
+        let mutex = ArcMutex::new(Some(42));
+
+        let result = mutex.read(|opt| opt.as_ref().copied());
+        assert_eq!(result, Some(42));
+
+        mutex.write(|opt| {
+            *opt = None;
+        });
+
+        let result = mutex.read(|opt| opt.as_ref().copied());
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_arc_mutex_with_result() {
+        let mutex = ArcMutex::new(Ok::<i32, &str>(42));
+
+        let result = mutex.read(|r| r.clone());
+        assert_eq!(result, Ok(42));
+
+        mutex.write(|r| {
+            *r = Err("error");
+        });
+
+        let result = mutex.read(|r| r.clone());
+        assert_eq!(result, Err("error"));
+    }
+
+    #[test]
+    fn test_arc_mutex_performance_comparison() {
+        // This test ensures ArcMutex performs basic operations without issues
+        // In a real performance test, we'd use criterion or similar
+        let mutex = ArcMutex::new(0);
+
+        let start = std::time::Instant::now();
+
+        for i in 0..1000 {
+            mutex.write(|v| *v = i);
+            let _ = mutex.read(|v| *v);
+        }
+
+        let elapsed = start.elapsed();
+        // Just ensure it completes in reasonable time (less than 1 second)
+        assert!(elapsed < std::time::Duration::from_secs(1));
     }
 }

@@ -23,7 +23,7 @@ mod tests {
     use prism3_concurrent::{
         double_checked::DoubleCheckedLock,
         lock::{
-            ArcMutex,
+            ArcStdMutex,
             ArcRwLock,
             Lock,
         },
@@ -42,7 +42,7 @@ mod tests {
 
     #[test]
     fn test_call_mut_simple_success() {
-        let data = ArcMutex::new(10);
+        let data = ArcStdMutex::new(10);
         let condition = Arc::new(AtomicBool::new(true));
 
         let result = DoubleCheckedLock::on(&data)
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_when_condition_is_false() {
-        let data = ArcMutex::new(10);
+        let data = ArcStdMutex::new(10);
         let condition = Arc::new(AtomicBool::new(false));
 
         let result = DoubleCheckedLock::on(&data)
@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_task_fails_and_rollback_is_called() {
-        let data = ArcMutex::new(10);
+        let data = ArcStdMutex::new(10);
         let condition = Arc::new(AtomicBool::new(true));
         let rollback_called = Arc::new(AtomicBool::new(false));
 
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_prepare_fails() {
-        let data = ArcMutex::new(10);
+        let data = ArcStdMutex::new(10);
         let condition = Arc::new(AtomicBool::new(true));
 
         let result = DoubleCheckedLock::on(&data)

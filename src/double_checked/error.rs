@@ -96,7 +96,6 @@ where
 
 impl<E> std::error::Error for ExecutorError<E> where E: std::fmt::Display + std::fmt::Debug {}
 
-
 /// Builder error types
 ///
 /// Defines error conditions that can occur during executor builder

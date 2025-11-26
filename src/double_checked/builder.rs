@@ -376,9 +376,7 @@ where
         if let Some(prepare_action) = self.prepare_action.take() {
             if let Err(e) = prepare_action.get() {
                 log::error!("Prepare action failed: {}", e);
-                return ExecutionResult::Failed(ExecutorError::PrepareFailed(
-                    e.to_string(),
-                ));
+                return ExecutionResult::Failed(ExecutorError::PrepareFailed(e.to_string()));
             }
         }
 
@@ -422,9 +420,7 @@ where
         if let Some(prepare_action) = self.prepare_action.take() {
             if let Err(e) = prepare_action.get() {
                 log::error!("Prepare action failed: {}", e);
-                return ExecutionResult::Failed(ExecutorError::PrepareFailed(
-                    e.to_string(),
-                ));
+                return ExecutionResult::Failed(ExecutorError::PrepareFailed(e.to_string()));
             }
         }
 

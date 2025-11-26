@@ -420,14 +420,12 @@ mod arc_std_mutex_tests {
     fn test_arc_mutex_with_result() {
         let mutex = ArcStdMutex::new(Ok::<i32, &str>(42));
 
-        let result = mutex.write(|res| {
-            match res {
-                Ok(ref mut val) => {
-                    *val *= 2;
-                    Ok(*val)
-                }
-                Err(_) => Err("was error"),
+        let result = mutex.write(|res| match res {
+            Ok(ref mut val) => {
+                *val *= 2;
+                Ok(*val)
             }
+            Err(_) => Err("was error"),
         });
         assert_eq!(result, Ok(84));
 

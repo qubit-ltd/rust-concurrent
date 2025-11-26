@@ -249,5 +249,4 @@ mod parking_lot_mutex_tests {
         let result = Lock::read(&*mutex, |value| *value);
         assert_eq!(result, 5000); // 50 threads × 100 increments each
     }
-
 }

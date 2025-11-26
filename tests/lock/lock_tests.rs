@@ -24,8 +24,8 @@ use std::sync::{
 };
 
 use prism3_concurrent::lock::{
-    ArcStdMutex,
     ArcRwLock,
+    ArcStdMutex,
     Lock,
 };
 
@@ -281,7 +281,10 @@ mod lock_trait_tests {
 
         // Try to acquire read lock, should return None since it's held by another thread
         let result = Lock::try_read(&*mutex, |value| *value);
-        assert!(result.is_none(), "Expected None when lock is held by another thread");
+        assert!(
+            result.is_none(),
+            "Expected None when lock is held by another thread"
+        );
 
         // Wait for child thread to complete
         handle.join().unwrap();
@@ -313,7 +316,10 @@ mod lock_trait_tests {
 
         // Try to acquire write lock, should return None since it's held by another thread
         let result = Lock::try_write(&*mutex, |value| *value);
-        assert!(result.is_none(), "Expected None when lock is held by another thread");
+        assert!(
+            result.is_none(),
+            "Expected None when lock is held by another thread"
+        );
 
         // Wait for child thread to complete
         handle.join().unwrap();
@@ -636,7 +642,10 @@ mod rwlock_trait_tests {
 
         // Try to acquire read lock, should return None since write lock is held by another thread
         let result = Lock::try_read(&*rwlock, |value| *value);
-        assert!(result.is_none(), "Expected None when write lock is held by another thread");
+        assert!(
+            result.is_none(),
+            "Expected None when write lock is held by another thread"
+        );
 
         // Wait for child thread to complete
         handle.join().unwrap();
@@ -668,7 +677,10 @@ mod rwlock_trait_tests {
 
         // Try to acquire write lock, should return None since read lock is held by another thread
         let result = Lock::try_write(&*rwlock, |value| *value);
-        assert!(result.is_none(), "Expected None when read lock is held by another thread");
+        assert!(
+            result.is_none(),
+            "Expected None when read lock is held by another thread"
+        );
 
         // Wait for child thread to complete
         handle.join().unwrap();
@@ -703,7 +715,10 @@ mod rwlock_trait_tests {
 
         // Try to acquire write lock, should return None since write lock is held by another thread
         let result = Lock::try_write(&*rwlock, |value| *value);
-        assert!(result.is_none(), "Expected None when write lock is held by another thread");
+        assert!(
+            result.is_none(),
+            "Expected None when write lock is held by another thread"
+        );
 
         // Wait for child thread to complete
         handle.join().unwrap();

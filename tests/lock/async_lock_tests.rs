@@ -285,7 +285,8 @@ mod async_lock_trait_tests {
         let result = AsyncLock::write(&mutex, |value| {
             *value += 1;
             *value
-        }).await;
+        })
+        .await;
         assert_eq!(result, 1);
     }
 
@@ -559,7 +560,8 @@ mod async_rwlock_trait_tests {
         let result = AsyncLock::write(&rwlock, |value| {
             *value += 1;
             *value
-        }).await;
+        })
+        .await;
         assert_eq!(result, 1);
     }
 

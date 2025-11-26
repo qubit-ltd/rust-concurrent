@@ -357,9 +357,11 @@ mod arc_async_mutex_tests {
         let result = async_mutex.read(|opt| opt.as_ref().map(|&x| x * 2)).await;
         assert_eq!(result, Some(84));
 
-        async_mutex.write(|opt| {
-            *opt = None;
-        }).await;
+        async_mutex
+            .write(|opt| {
+                *opt = None;
+            })
+            .await;
 
         let result = async_mutex.read(|opt| opt.is_none()).await;
         assert!(result);

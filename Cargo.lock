@@ -312,29 +312,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b3cff922bd51709b605d9ead9aa71031d81447142d828eb4a6eba76fe619f9b"
 
 [[package]]
-name = "prism3-atomic"
-version = "0.2.0"
+name = "proc-macro2"
+version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2d9929fd343ba5dea0cfa8ee84dcc4906223fd8872c37539fda6c7f3685a4e3"
-
-[[package]]
-name = "prism3-concurrent"
-version = "0.2.0"
+checksum = "89ae43fd86e4158d6db51ad8e2b80f313af9cc74f5c0e03ccb87de09998732de"
 dependencies = [
- "log",
- "parking_lot",
- "prism3-atomic",
- "prism3-core",
- "prism3-function",
- "thiserror",
- "tokio",
+ "unicode-ident",
 ]
 
 [[package]]
-name = "prism3-core"
-version = "0.2.0"
+name = "qubit-atomic"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e109737935daa4c032a2c0f056baf4d460790a831668795792ae8e5f70d4ff5"
+checksum = "67b5359faae61717079e961abd42710fbcbcafbb7746df6527ac6161cc044392"
+
+[[package]]
+name = "qubit-common"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7e5470d3788b83562cfbe3cc20b15714335140fdc2b5bf62ed38b810c75dc64"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -347,22 +343,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "prism3-function"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fff68316cfe737affd4a1b576cdb541ed4f534c46218d4b109f72d03eb1f045a"
+name = "qubit-concurrent"
+version = "0.2.1"
 dependencies = [
+ "log",
  "parking_lot",
- "paste",
+ "qubit-atomic",
+ "qubit-common",
+ "qubit-function",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
-name = "proc-macro2"
-version = "1.0.101"
+name = "qubit-function"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89ae43fd86e4158d6db51ad8e2b80f313af9cc74f5c0e03ccb87de09998732de"
+checksum = "930ee128de54bccd4e17a1584ad07168343b765d0ea2f5c7ff7f977ac9e08228"
 dependencies = [
- "unicode-ident",
+ "parking_lot",
+ "paste",
 ]
 
 [[package]]

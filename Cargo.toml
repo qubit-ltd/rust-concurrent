@@ -1,14 +1,14 @@
 [package]
-name = "prism3-concurrent"
-version = "0.2.0"
+name = "qubit-concurrent"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 license = "Apache-2.0"
-repository = "https://github.com/3-prism/prism3-rust-concurrent"
+repository = "https://github.com/qubit-ltd/rust-concurrent"
 description = "Concurrent utilities library providing thread pools, task scheduling, synchronization primitives and other concurrent programming tools"
-homepage = "https://github.com/3-prism/prism3-rust-concurrent"
-documentation = "https://docs.rs/prism3-concurrent"
+homepage = "https://github.com/qubit-ltd/rust-concurrent"
+documentation = "https://docs.rs/qubit-concurrent"
 readme = "README.md"
 keywords = ["concurrent", "async", "lock", "mutex", "rwlock"]
 categories = ["concurrency", "asynchronous"]
@@ -23,18 +23,18 @@ exclude = [
 ]
 
 [lib]
-name = "prism3_concurrent"
+name = "qubit_concurrent"
 doctest = false
 
 [dependencies]
 # Async runtime
 tokio = { version = "1.0", features = ["sync"] }
 # Core utilities
-prism3-core = "0.2.0"
+qubit-common = "0.3.0"
 # Functional programming utilities
-prism3-function = "0.5.0"
+qubit-function = "0.7.0"
 # Atomic operations
-prism3-atomic = "0.2.0"
+qubit-atomic = "0.7.0"
 # Error handling
 thiserror = "2.0.17"
 # Logging

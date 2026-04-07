@@ -2,7 +2,7 @@
 
 ### 1. 背景与目标
 - **背景**：现有 Java 版本 `CasExecutor` 基于结果驱动（非异常驱动）的重试策略（Failsafe），提供回调、灵活的延迟/次数/时间限制配置，并将并发冲突与业务中止做出语义区分。
-- **目标**：在 Rust 中实现等价能力，同时充分利用 Rust 的类型系统、错误模型与现有 `prism3-rust-retry` 库，保持行为一致、接口 Rust 化、性能和可维护性更优。
+- **目标**：在 Rust 中实现等价能力，同时充分利用 Rust 的类型系统、错误模型与现有 `qubit-retry` 库，保持行为一致、接口 Rust 化、性能和可维护性更优。
 - **不做改变**：不改变业务语义；不将异常驱动切换为异常重试；仍以“结果状态（成功/可重试失败/中止）”作为重试决策输入。
 
 ### 2. 现有 Java 设计要点（摘要）
@@ -19,9 +19,9 @@
 ### 3. Rust 端总体设计
 - **核心保持**：结果驱动的重试 + 回调。
 - **Rust 化**：以 `Result<T, CasError>` 对外；提供可选“无异常风格”的结构化返回版本（等价 Java 的 `tryExecute`）。
-- **依赖复用**：`prism3-rust-retry`（已具备结果/错误两路决策、延迟策略、超时、监听器）；必要时可提供异步版本（真超时中断）。
+- **依赖复用**：`qubit-retry`（已具备结果/错误两路决策、延迟策略、超时、监听器）；必要时可提供异步版本（真超时中断）。
 
-### 4. 模块与类型（建议放置：`prism3-rust-concurrent/src/cas/`）
+### 4. 模块与类型（建议放置：`rust-concurrent/src/cas/`）
 - `CasResult<T>`
   - 字段：`success: bool`、`should_retry: bool`、`old_state: Arc<T>`（或 `Option<Arc<T>>`）、`new_state: Option<Arc<T>>`、`error_code: Option<String>`、`error_message: Option<String>`、`attempts: u32`。
   - 构造：`success(old, new)`；`retry(old, code, msg, attempts)`；`abort(old, code, msg)`。
@@ -44,7 +44,7 @@
 
 - `CasExecutor<T>`
   - 线程安全、可复用；内部组合 `RetryBuilder<CasResult<T>>`。
-  - Builder 暴露与 Java 对齐的配置（委托给 `prism3-rust-retry`）：`max_attempts`、`max_duration`、`operation_timeout`、`delay_strategy`（fixed/random/exponential_backoff/none）、`jitter_factor`。
+  - Builder 暴露与 Java 对齐的配置（委托给 `qubit-retry`）：`max_attempts`、`max_duration`、`operation_timeout`、`delay_strategy`（fixed/random/exponential_backoff/none）、`jitter_factor`。
   - 回调：`on_success: Option<impl Fn(&T, &T) + Send + Sync>`；`on_abort: Option<impl Fn(&CasResult<T>, &CasError) + Send + Sync>`。
   - 预置模板：
     - `high_concurrency()`：`max_attempts=1000`、`exp_backoff(50ms..30s, ×2.0)`、`jitter=0.25`、`max_duration=60s`。
@@ -79,7 +79,7 @@
 ```rust
 // 假设已选择 ArcSwap 方案作为底层存储
 use std::sync::Arc;
-use prism3_retry::{RetryBuilder};
+use qubit_retry::{RetryBuilder};
 
 // 伪代码：AtomicState（基于 arc-swap）
 struct AtomicState<T>(arc_swap::ArcSwap<T>);

@@ -1,17 +1,17 @@
-# Prism3 Concurrent
+# Qubit Concurrent
 
-[![CircleCI](https://circleci.com/gh/3-prism/prism3-rust-concurrent.svg?style=shield)](https://circleci.com/gh/3-prism/prism3-rust-concurrent)
-[![Coverage Status](https://coveralls.io/repos/github/3-prism/prism3-rust-concurrent/badge.svg?branch=main)](https://coveralls.io/github/3-prism/prism3-rust-concurrent?branch=main)
-[![Crates.io](https://img.shields.io/crates/v/prism3-concurrent.svg?color=blue)](https://crates.io/crates/prism3-concurrent)
+[![CircleCI](https://circleci.com/gh/qubit-ltd/rust-concurrent.svg?style=shield)](https://circleci.com/gh/qubit-ltd/rust-concurrent)
+[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rust-concurrent/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rust-concurrent?branch=main)
+[![Crates.io](https://img.shields.io/crates/v/qubit-concurrent.svg?color=blue)](https://crates.io/crates/qubit-concurrent)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Documentation](https://img.shields.io/badge/docs-English-blue.svg)](README.md)
 
-为 Prism3 生态系统提供线程安全锁包装器和同步原语的综合性 Rust 并发工具库。
+为 Qubit Rust 组件库提供线程安全锁包装器和同步原语的综合性 Rust 并发工具库。
 
 ## 概述
 
-Prism3 Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 并发编程提供统一的接口。所有锁类型内部都已集成 `Arc`，因此你可以直接克隆并在线程或任务间共享它们，无需额外包装。该库通过基于闭包的 API 为常见锁模式提供便捷的辅助方法，确保正确的锁管理。
+Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 并发编程提供统一的接口。所有锁类型内部都已集成 `Arc`，因此你可以直接克隆并在线程或任务间共享它们，无需额外包装。该库通过基于闭包的 API 为常见锁模式提供便捷的辅助方法，确保正确的锁管理。
 
 ## 特性
 
@@ -39,7 +39,7 @@ Prism3 Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust
 
 ```toml
 [dependencies]
-prism3-concurrent = "0.1.0"
+qubit-concurrent = "0.2.1"
 ```
 
 ## 快速开始
@@ -47,7 +47,7 @@ prism3-concurrent = "0.1.0"
 ### 同步互斥锁
 
 ```rust
-use prism3_concurrent::ArcMutex;
+use qubit_concurrent::ArcMutex;
 use std::thread;
 
 fn main() {
@@ -79,7 +79,7 @@ fn main() {
 ### 同步读写锁
 
 ```rust
-use prism3_concurrent::ArcRwLock;
+use qubit_concurrent::ArcRwLock;
 
 fn main() {
     let data = ArcRwLock::new(vec![1, 2, 3]);
@@ -112,7 +112,7 @@ fn main() {
 ### 异步互斥锁
 
 ```rust
-use prism3_concurrent::ArcAsyncMutex;
+use qubit_concurrent::ArcAsyncMutex;
 
 #[tokio::main]
 async fn main() {
@@ -144,7 +144,7 @@ async fn main() {
 ### 异步读写锁
 
 ```rust
-use prism3_concurrent::ArcAsyncRwLock;
+use qubit_concurrent::ArcAsyncRwLock;
 
 #[tokio::main]
 async fn main() {
@@ -178,7 +178,7 @@ async fn main() {
 ### 尝试加锁（非阻塞）
 
 ```rust
-use prism3_concurrent::ArcMutex;
+use qubit_concurrent::ArcMutex;
 
 fn main() {
     let mutex = ArcMutex::new(42);
@@ -198,40 +198,40 @@ fn main() {
 集成 `Arc` 的同步互斥锁包装器。
 
 **方法：**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.new) - 创建新的互斥锁
-- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.with_lock) - 获取锁并执行闭包
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.try_with_lock) - 尝试获取锁而不阻塞
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.clone) - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.new) - 创建新的互斥锁
+- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.with_lock) - 获取锁并执行闭包
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_with_lock) - 尝试获取锁而不阻塞
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.clone) - 克隆 Arc 引用
 
 ### ArcRwLock
 
 支持多个并发读者的同步读写锁包装器。
 
 **方法：**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.new) - 创建新的读写锁
-- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.read) - 获取读锁
-- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.write) - 获取写锁
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.clone) - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.new) - 创建新的读写锁
+- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.read) - 获取读锁
+- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.write) - 获取写锁
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.clone) - 克隆 Arc 引用
 
 ### ArcAsyncMutex
 
 用于 Tokio 运行时的异步互斥锁。
 
 **方法：**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.new) - 创建新的异步互斥锁
-- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - 异步获取锁
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - 尝试获取锁（非阻塞）
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.clone) - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.new) - 创建新的异步互斥锁
+- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - 异步获取锁
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - 尝试获取锁（非阻塞）
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.clone) - 克隆 Arc 引用
 
 ### ArcAsyncRwLock
 
 用于 Tokio 运行时的异步读写锁。
 
 **方法：**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.new) - 创建新的异步读写锁
-- [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.read) - 异步获取读锁
-- [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.write) - 异步获取写锁
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.clone) - 克隆 Arc 引用
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.new) - 创建新的异步读写锁
+- [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.read) - 异步获取读锁
+- [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.write) - 异步获取写锁
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.clone) - 克隆 Arc 引用
 
 ## 设计模式
 
@@ -379,7 +379,7 @@ cargo test
 
 ## 许可证
 
-Copyright (c) 2025 3-Prism Co. Ltd. All rights reserved.
+Copyright (c) 2025 - 2026. Haixing Hu, Qubit Co. Ltd. All rights reserved.
 
 根据 Apache 许可证 2.0 版（"许可证"）授权；
 除非遵守许可证，否则您不得使用此文件。
@@ -404,8 +404,8 @@ Copyright (c) 2025 3-Prism Co. Ltd. All rights reserved.
 
 ## 作者
 
-**胡海星** - *棱芯科技有限公司*
+**胡海星** - *Qubit Co. Ltd.*
 
 ---
 
-有关 Prism3 生态系统的更多信息，请访问我们的 [GitHub 主页](https://github.com/3-prism)。
+有关 Qubit Rust 组件库的更多信息，请访问我们的 [GitHub 组织](https://github.com/qubit-ltd)。

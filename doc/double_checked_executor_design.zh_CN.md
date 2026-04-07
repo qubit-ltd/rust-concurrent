@@ -8,7 +8,7 @@
 
 - 提供与 Java 版本功能等价的 Rust 实现
 - 利用 Rust 的编译期保证实现更强的线程安全
-- 集成现有的 `prism3-rust-function` 和 `prism3-rust-clock` 组件
+- 集成现有的 `qubit-function` 和 `qubit-clock` 组件
 - 提供符合 Rust 习惯的 API 设计
 
 ### 1.2 适用场景
@@ -32,7 +32,7 @@
 
 2. **条件测试器**
    - `BooleanSupplier tester`：用于检查执行条件（Java）
-   - Rust 移植：使用 `ArcTester`（来自 `prism3-rust-function`）
+   - Rust 移植：使用 `ArcTester`（来自 `qubit-function`）
    - 依赖的共享状态必须通过线程安全类型（如 `Arc<AtomicBool>`、`Arc<Mutex<T>>`）保证可见性
 
 3. **灵活的错误处理**
@@ -72,7 +72,7 @@ on(lock) → logger()?  → when(tester) → prepare()? → call/execute → rol
 ```
 
 **核心组件：**
-- `DoubleCheckedLockExecutor`：入口点，提供 `on()` 方法
+- `DoubleCheckedLock`：Rust 入口类型，提供 `on()` 方法
 - `ExecutionBuilder<State>`：状态化的构建器，根据状态提供不同方法
 - `ExecutionContext`：执行后的上下文，支持 rollback 和结果获取
 - `ExecutionResult<T>`：执行结果包装器
@@ -113,7 +113,7 @@ stateDiagram-v2
 ### 3.2 模块结构
 
 ```
-prism3-rust-concurrent/
+rust-concurrent/
 ├── src/
 │   ├── lib.rs
 │   ├── executor.rs           # 执行器接口抽象 trait（Runnable、Callable、Executor 等）
@@ -125,7 +125,7 @@ prism3-rust-concurrent/
 │   │   └── arc_rw_lock.rs   # ArcRwLock 包装器
 │   └── double_checked/       # 双重检查锁执行器模块
 │       ├── mod.rs           # 模块导出
-│       ├── executor.rs      # DoubleCheckedLockExecutor 入口
+│       ├── lock.rs          # DoubleCheckedLock 入口
 │       ├── builder.rs       # ExecutionBuilder<State> 实现
 │       ├── config.rs        # LogConfig 等配置结构体
 │       ├── error.rs         # ExecutorError、BuilderError 定义
@@ -141,7 +141,7 @@ prism3-rust-concurrent/
 ```
 
 **模块职责：**
-- `executor.rs`：双重检查锁执行器的入口点，提供 `on()` 静态方法
+- `lock.rs`：双重检查锁执行器的入口类型 `DoubleCheckedLock`，提供 `on()` 静态方法
 - `builder.rs`：状态化的 ExecutionBuilder，根据类型参数提供不同阶段的方法
 - `result.rs`：ExecutionResult（执行结果）和 ExecutionContext（执行上下文）
 - `config.rs`：配置结构体（LogConfig 等）
@@ -169,7 +169,7 @@ pub struct Conditioned;
 #### ExecutionBuilder - 状态化构建器
 
 ```rust
-use prism3_function::{BoxTester, BoxSupplierOnce};
+use qubit_function::{BoxTester, BoxSupplierOnce};
 
 /// 执行构建器（使用类型状态机模式）
 ///
@@ -194,17 +194,17 @@ where
 - 使用类型参数 `State` 控制可用的方法
 - 零成本抽象：状态类型在编译后完全消失
 - 编译期检查：错误的调用顺序会导致编译错误
-- 使用 `prism3-function` 的 trait 统一闭包类型
+- 使用 `qubit-function` 的 trait 统一闭包类型
 
-#### DoubleCheckedLockExecutor - 入口点
+#### DoubleCheckedLock - 入口点
 
 ```rust
 /// 双重检查锁执行器入口
 ///
 /// 提供静态方法 `on()` 开始构建执行流程
-pub struct DoubleCheckedLockExecutor;
+pub struct DoubleCheckedLock;
 
-impl DoubleCheckedLockExecutor {
+impl DoubleCheckedLock {
     /// 开始构建双重检查锁执行
     ///
     /// # 参数
@@ -224,7 +224,7 @@ impl DoubleCheckedLockExecutor {
 #### ExecutionContext - 执行后的上下文
 
 ```rust
-use prism3_function::BoxSupplierOnce;
+use qubit_function::BoxSupplierOnce;
 
 /// 执行上下文（任务执行后的状态）
 ///
@@ -257,7 +257,7 @@ pub struct LogConfig {
 
 #### 为何使用 `BoxTester`？
 
-`prism3-rust-function` 提供了三种 Tester 实现：`BoxTester`、`RcTester` 和 `ArcTester`。新设计使用 `BoxTester`，原因如下：
+`qubit-function` 提供了三种 Tester 实现：`BoxTester`、`RcTester` 和 `ArcTester`。新设计使用 `BoxTester`，原因如下：
 
 **1. 临时性使用**
 - `ExecutionBuilder` 的生命周期很短，仅在一次执行流程中存在
@@ -277,9 +277,9 @@ pub struct LogConfig {
 - 如果将来需要将 `ExecutionBuilder` 存储为结构体字段或跨线程传递，可以改用 `ArcTester`
 - 当前设计优先考虑简洁性和性能
 
-#### 为何使用 `prism3-function` 的闭包 Trait？
+#### 为何使用 `qubit-function` 的闭包 Trait？
 
-本设计采用 `prism3-function` 提供的闭包 trait 来统一参数类型，而不是直接使用原生闭包：
+本设计采用 `qubit-function` 提供的闭包 trait 来统一参数类型，而不是直接使用原生闭包：
 
 **1. 使用 `SupplierOnce` 替代 `FnOnce() -> T`**
 - **应用场景**：`prepare` 和 `rollback` 参数
@@ -294,7 +294,7 @@ pub struct LogConfig {
 - **原因**：
   - 统一抽象：`BoxFunctionOnce<T, Result<R, E>>`
   - 语义明确：function 接受输入并产生输出
-  - 与 `prism3-function` 生态一致
+  - 与 `qubit-function` 生态一致
   - 便于未来扩展（如添加组合操作、缓存等）
 
 **3. 使用 `MutatingFunctionOnce` 替代 `FnOnce(&mut T) -> R`**
@@ -303,7 +303,7 @@ pub struct LogConfig {
   - 语义精确：mutating function 明确表示会修改输入
   - 类型统一：`BoxMutatingFunctionOnce<T, Result<R, E>>`
   - 与其他 function trait 保持一致性
-  - 填补 `prism3-function` 的 gap（`MutatorOnce` 不返回值）
+  - 填补 `qubit-function` 的 gap（`MutatorOnce` 不返回值）
 
 **4. 设计一致性**
 
@@ -316,7 +316,7 @@ pub struct LogConfig {
 **5. 优势总结**
 - ✅ 类型系统更清晰：通过 trait 名称即可理解语义
 - ✅ 代码可读性更强：`BoxFunctionOnce` 比 `Box<dyn FnOnce(&T) -> R>` 更简洁
-- ✅ 与项目生态一致：`prism3-function` 是项目的核心基础库
+- ✅ 与项目生态一致：`qubit-function` 是项目的核心基础库
 - ✅ 便于测试和 mock：trait 比原生闭包更容易模拟
 - ✅ 未来扩展性：可以基于这些 trait 提供更多组合器
 
@@ -483,7 +483,7 @@ use crate::lock::{ArcAsyncMutex, ArcAsyncRwLock};
 新的 API 设计使用类型状态机模式，强制执行正确的调用顺序：
 
 ```
-DoubleCheckedLockExecutor::on(&lock)  // → ExecutionBuilder<Initial>
+DoubleCheckedLock::on(&lock)  // → ExecutionBuilder<Initial>
     .logger(level, message)?           // → ExecutionBuilder<Configuring>
     .when(tester)                      // → ExecutionBuilder<Conditioned>
     .prepare(action)?                  // → ExecutionBuilder<Conditioned>
@@ -492,10 +492,10 @@ DoubleCheckedLockExecutor::on(&lock)  // → ExecutionBuilder<Initial>
     .get_result()                      // → ExecutionResult<T>
 ```
 
-### 6.2 入口点：DoubleCheckedLockExecutor
+### 6.2 入口点：DoubleCheckedLock
 
 ```rust
-impl DoubleCheckedLockExecutor {
+impl DoubleCheckedLock {
     /// 开始构建双重检查锁执行
     ///
     /// # 参数
@@ -506,10 +506,10 @@ impl DoubleCheckedLockExecutor {
     ///
     /// # 示例
     /// ```rust
-    /// use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+    /// use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
     ///
     /// let data = ArcMutex::new(42);
-    /// let result = DoubleCheckedLockExecutor::on(&data)
+    /// let result = DoubleCheckedLock::on(&data)
     ///     .when(|| true)
     ///     .call(|value| Ok(*value))
     ///     .get_result();
@@ -598,7 +598,7 @@ where
 ### 6.5 Conditioned 状态：准备和执行
 
 ```rust
-use prism3_function::{SupplierOnce, FunctionOnce, MutatingFunctionOnce};
+use qubit_function::{SupplierOnce, FunctionOnce, MutatingFunctionOnce};
 
 impl<'a, L, T> ExecutionBuilder<'a, L, T, Conditioned>
 where
@@ -685,7 +685,7 @@ where
 ### 6.6 ExecutionContext：回滚和获取结果
 
 ```rust
-use prism3_function::SupplierOnce;
+use qubit_function::SupplierOnce;
 
 impl<'a, T> ExecutionContext<'a, T> {
     /// 设置回滚操作（可选，仅在失败时执行）
@@ -738,7 +738,7 @@ impl<'a> ExecutionContext<'a, ()> {
 对于读写锁，API 设计略有不同：
 
 ```rust
-use prism3_function::{FunctionOnce, MutatingFunctionOnce};
+use qubit_function::{FunctionOnce, MutatingFunctionOnce};
 
 // 使用读锁（只读操作）
 impl<'a, L, T> ExecutionBuilder<'a, L, T, Conditioned>
@@ -789,7 +789,7 @@ where
 - `finish` → 仅获取成功/失败状态
 
 **4. 统一的 Trait 抽象**
-- 使用 `prism3-function` 的 trait 统一闭包类型
+- 使用 `qubit-function` 的 trait 统一闭包类型
 - 通过 trait 名称即可理解参数语义（Supplier、Function、MutatingFunction）
 - 便于测试、mock 和未来扩展
 - 与项目整体生态保持一致
@@ -807,13 +807,13 @@ where
 ```rust
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 // 懒加载初始化示例
 let resource = ArcMutex::new(None::<String>);
 let initialized = Arc::new(AtomicBool::new(false));
 
-let result = DoubleCheckedLockExecutor::on(&resource)
+let result = DoubleCheckedLock::on(&resource)
     // when 接受 Tester trait，闭包会自动转换
     .when({
         let initialized = initialized.clone();
@@ -840,7 +840,7 @@ assert!(initialized.load(Ordering::Acquire));
 ### 7.2 带日志配置的用法
 
 ```rust
-let result = DoubleCheckedLockExecutor::on(&resource)
+let result = DoubleCheckedLock::on(&resource)
     .logger(log::Level::Warn, "Condition not met, skipping initialization")
     .when(|| !initialized.load(Ordering::Acquire))
     .call_mut(|data| {
@@ -854,14 +854,14 @@ let result = DoubleCheckedLockExecutor::on(&resource)
 
 ```rust
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let balance = ArcMutex::new(1000);
 let transaction_active = Arc::new(AtomicBool::new(false));
 let connection_opened = Arc::new(AtomicBool::new(false));
 let transaction_rolled_back = Arc::new(AtomicBool::new(false));
 
-let result = DoubleCheckedLockExecutor::on(&balance)
+let result = DoubleCheckedLock::on(&balance)
     .logger(log::Level::Info, "Transaction already active")    // 1. 配置日志
     .when({                                                     // 2. 设置条件
         let transaction_active = transaction_active.clone();
@@ -904,7 +904,7 @@ assert!(result.success);
 ### 7.4 无返回值操作使用 finish()
 
 ```rust
-let success = DoubleCheckedLockExecutor::on(&resource)
+let success = DoubleCheckedLock::on(&resource)
     .logger(log::Level::Debug, "Resource already initialized")
     .when(|| !is_initialized())
     .prepare(|| setup_connection())
@@ -927,7 +927,7 @@ if success {
 ```rust
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcMutex};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 struct Service {
     running: Arc<AtomicBool>,
@@ -954,7 +954,7 @@ impl Service {
 
     /// 设置线程池大小（仅在服务运行时）
     pub fn set_pool_size(&self, size: i32) -> Result<(), String> {
-        let result = DoubleCheckedLockExecutor::on(&self.pool_size)
+        let result = DoubleCheckedLock::on(&self.pool_size)
             .logger(log::Level::Error, "Service is not running")
             .when({
                 let running = self.running.clone();
@@ -981,7 +981,7 @@ impl Service {
 
     /// 获取线程池大小
     pub fn get_pool_size(&self) -> Option<i32> {
-        let result = DoubleCheckedLockExecutor::on(&self.pool_size)
+        let result = DoubleCheckedLock::on(&self.pool_size)
             .when({
                 let running = self.running.clone();
                 move || running.load(Ordering::Acquire)
@@ -1033,7 +1033,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::collections::HashMap;
-use prism3_concurrent::{DoubleCheckedLockExecutor, lock::ArcRwLock};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcRwLock};
 
 struct Cache {
     active: Arc<AtomicBool>,
@@ -1051,7 +1051,7 @@ impl Cache {
     /// 读取缓存（使用读锁）
     pub fn get(&self, key: &str) -> Option<String> {
         let key = key.to_string();
-        let result = DoubleCheckedLockExecutor::on(&self.data)
+        let result = DoubleCheckedLock::on(&self.data)
             .when({
                 let active = self.active.clone();
                 move || active.load(Ordering::Acquire)
@@ -1065,7 +1065,7 @@ impl Cache {
 
     /// 写入缓存（使用写锁）
     pub fn set(&self, key: String, value: String) -> Result<(), String> {
-        let result = DoubleCheckedLockExecutor::on(&self.data)
+        let result = DoubleCheckedLock::on(&self.data)
             .when({
                 let active = self.active.clone();
                 move || active.load(Ordering::Acquire)
@@ -1117,17 +1117,17 @@ impl Cache {
 
 ```rust
 // ✅ 正确：按顺序调用
-let result = DoubleCheckedLockExecutor::on(&lock)
+let result = DoubleCheckedLock::on(&lock)
     .when(|| true)
     .call(|data| Ok(*data))
     .get_result();
 
 // ❌ 编译错误：跳过 when() 直接 call()
-let result = DoubleCheckedLockExecutor::on(&lock)
+let result = DoubleCheckedLock::on(&lock)
     .call(|data| Ok(*data));  // 错误：Initial 状态没有 call() 方法
 
 // ❌ 编译错误：when() 之前调用 prepare()
-let result = DoubleCheckedLockExecutor::on(&lock)
+let result = DoubleCheckedLock::on(&lock)
     .prepare(|| Ok(()))  // 错误：Initial 状态没有 prepare() 方法
     .when(|| true);
 ```
@@ -1138,10 +1138,10 @@ let result = DoubleCheckedLockExecutor::on(&lock)
 
 ```rust
 // ✅ 推荐：使用 trait，自动管理锁的生命周期
-use prism3_rust_concurrent::lock::{Lock, ArcMutex};
+use qubit_concurrent::lock::{Lock, ArcMutex};
 
 let data = ArcMutex::new(42);
-DoubleCheckedLockExecutor::on(&data)
+DoubleCheckedLock::on(&data)
     .when(|| true)
     .call_mut(|value| {
     *value += 1;  // 闭包自动接收 &mut i32
@@ -1163,7 +1163,7 @@ Java 的 `volatile` 在 Rust 中没有直接对应物，需要使用以下方案
 // ✅ 推荐方案1：AtomicBool（适用于简单布尔状态）
 use std::sync::atomic::{AtomicBool, Ordering};
 let state = Arc::new(AtomicBool::new(false));
-DoubleCheckedLockExecutor::on(&lock)
+DoubleCheckedLock::on(&lock)
     .when({
         let state = state.clone();
         move || state.load(Ordering::Acquire)
@@ -1171,10 +1171,10 @@ DoubleCheckedLockExecutor::on(&lock)
     .call(|data| Ok(*data));
 
 // ✅ 推荐方案2：ArcMutex（适用于复杂状态）
-use prism3_rust_concurrent::lock::ArcMutex;
+use qubit_concurrent::lock::ArcMutex;
 let state = ArcMutex::new(State::Running);
 let state_clone = state.clone();
-DoubleCheckedLockExecutor::on(&lock)
+DoubleCheckedLock::on(&lock)
     .when(move || {
     state_clone.with_lock(|s| *s == State::Running)
 })
@@ -1205,11 +1205,11 @@ DoubleCheckedLockExecutor::on(&lock)
 ### 9.6 错误处理最佳实践
 
 ```rust
-use prism3_rust_concurrent::lock::{Lock, ArcMutex};
+use qubit_concurrent::lock::{Lock, ArcMutex};
 
 // ✅ 推荐：使用 ExecutionResult 检查成功状态
 let data = ArcMutex::new(42);
-let result = DoubleCheckedLockExecutor::on(&data)
+let result = DoubleCheckedLock::on(&data)
     .when(|| true)
     .call(|value| Ok(*value))
     .get_result();
@@ -1232,12 +1232,12 @@ let value = result.into_result()?;
 ### 10.1 项目内部资料
 
 - [Java 版本源码](../external/common-java/src/main/java/ltd/qubit/commons/concurrent/DoubleCheckedLockExecutor.java)
-- [prism3-rust-concurrent Lock 模块](../src/lock/)
+- [rust-concurrent Lock 模块](../src/lock/)
   - [Lock trait](../src/lock/lock.rs)
   - [ReadWriteLock trait](../src/lock/read_write_lock.rs)
   - [ArcMutex 包装器](../src/lock/arc_mutex.rs)
   - [ArcRwLock 包装器](../src/lock/arc_rw_lock.rs)
-- [prism3-rust-function 文档](../../prism3-rust-function/README.md)
+- [qubit-function 文档](../../qubit-function/README.md)
 
 ### 10.2 外部资料
 
@@ -1261,7 +1261,7 @@ let value = result.into_result()?;
 - `rollback()` 在任务执行后可选调用
 - 新增 `ExecutionContext` 类型，支持执行后的操作
 - 使用 `BoxTester` 替代 `ArcTester`（临时使用场景）
-- 使用 `prism3-function` 的 trait 统一闭包类型：
+- 使用 `qubit-function` 的 trait 统一闭包类型：
   - `SupplierOnce<Result<(), E>>` 用于 `prepare` 和 `rollback`
   - `FunctionOnce<T, Result<R, E>>` 用于 `call` 和 `execute`
   - `MutatingFunctionOnce<T, Result<R, E>>` 用于 `call_mut` 和 `execute_mut`

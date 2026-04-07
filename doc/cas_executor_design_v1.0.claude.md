@@ -803,7 +803,7 @@ impl<T> Default for CasExecutorBuilder<T> {
 ### 5.1 基础使用
 
 ```rust
-use prism3_concurrent::cas::{CasExecutor, CasResult};
+use qubit_concurrent::cas::{CasExecutor, CasResult};
 use std::sync::atomic::AtomicPtr;
 use std::sync::Arc;
 
@@ -1070,7 +1070,7 @@ criterion_main!(benches);
 
 ```toml
 [package]
-name = "prism3-concurrent"
+name = "qubit-concurrent"
 version = "0.1.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]

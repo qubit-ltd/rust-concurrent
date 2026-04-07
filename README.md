@@ -1,17 +1,17 @@
-# Prism3 Concurrent
+# Qubit Concurrent
 
-[![CircleCI](https://circleci.com/gh/3-prism/prism3-rust-concurrent.svg?style=shield)](https://circleci.com/gh/3-prism/prism3-rust-concurrent)
-[![Coverage Status](https://coveralls.io/repos/github/3-prism/prism3-rust-concurrent/badge.svg?branch=main)](https://coveralls.io/github/3-prism/prism3-rust-concurrent?branch=main)
-[![Crates.io](https://img.shields.io/crates/v/prism3-concurrent.svg?color=blue)](https://crates.io/crates/prism3-concurrent)
+[![CircleCI](https://circleci.com/gh/qubit-ltd/rust-concurrent.svg?style=shield)](https://circleci.com/gh/qubit-ltd/rust-concurrent)
+[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rust-concurrent/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rust-concurrent?branch=main)
+[![Crates.io](https://img.shields.io/crates/v/qubit-concurrent.svg?color=blue)](https://crates.io/crates/qubit-concurrent)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-A comprehensive Rust concurrent utilities library providing thread-safe lock wrappers and synchronization primitives for the Prism3 ecosystem.
+A comprehensive Rust concurrent utilities library providing thread-safe lock wrappers and synchronization primitives for the Qubit Rust libraries.
 
 ## Overview
 
-Prism3 Concurrent provides easy-to-use wrappers around both synchronous and asynchronous locks, offering a unified interface for concurrent programming in Rust. All lock types have `Arc` built-in internally, so you can clone and share them across threads or tasks directly without additional wrapping. The library provides convenient helper methods for common locking patterns with a closure-based API that ensures proper lock management.
+Qubit Concurrent provides easy-to-use wrappers around both synchronous and asynchronous locks, offering a unified interface for concurrent programming in Rust. All lock types have `Arc` built-in internally, so you can clone and share them across threads or tasks directly without additional wrapping. The library provides convenient helper methods for common locking patterns with a closure-based API that ensures proper lock management.
 
 ## Features
 
@@ -45,7 +45,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-prism3-concurrent = "0.1.0"
+qubit-concurrent = "0.2.1"
 ```
 
 ## Quick Start
@@ -53,7 +53,7 @@ prism3-concurrent = "0.1.0"
 ### Synchronous Mutex
 
 ```rust
-use prism3_concurrent::ArcMutex;
+use qubit_concurrent::ArcMutex;
 use std::thread;
 
 fn main() {
@@ -85,7 +85,7 @@ fn main() {
 ### Synchronous Read-Write Lock
 
 ```rust
-use prism3_concurrent::ArcRwLock;
+use qubit_concurrent::ArcRwLock;
 
 fn main() {
     let data = ArcRwLock::new(vec![1, 2, 3]);
@@ -118,7 +118,7 @@ fn main() {
 ### Asynchronous Mutex
 
 ```rust
-use prism3_concurrent::ArcAsyncMutex;
+use qubit_concurrent::ArcAsyncMutex;
 
 #[tokio::main]
 async fn main() {
@@ -150,7 +150,7 @@ async fn main() {
 ### Asynchronous Read-Write Lock
 
 ```rust
-use prism3_concurrent::ArcAsyncRwLock;
+use qubit_concurrent::ArcAsyncRwLock;
 
 #[tokio::main]
 async fn main() {
@@ -184,7 +184,7 @@ async fn main() {
 ### Try Lock (Non-blocking)
 
 ```rust
-use prism3_concurrent::ArcMutex;
+use qubit_concurrent::ArcMutex;
 
 fn main() {
     let mutex = ArcMutex::new(42);
@@ -200,7 +200,7 @@ fn main() {
 ### Task Executor
 
 ```rust
-use prism3_concurrent::{Executor, ExecutorService};
+use qubit_concurrent::{Executor, ExecutorService};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -248,66 +248,66 @@ async fn main() {
 A synchronous mutual exclusion lock wrapper with `Arc` integration.
 
 **Methods:**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.new) - Create a new mutex
-- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.with_lock) - Acquire lock and execute closure
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.try_with_lock) - Try to acquire lock without blocking
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcMutex.html#method.clone) - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.new) - Create a new mutex
+- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.with_lock) - Acquire lock and execute closure
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_with_lock) - Try to acquire lock without blocking
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.clone) - Clone the Arc reference
 
 ### ArcRwLock
 
 A synchronous read-write lock wrapper supporting multiple concurrent readers.
 
 **Methods:**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.new) - Create a new read-write lock
-- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.read) - Acquire read lock
-- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.write) - Acquire write lock
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcRwLock.html#method.clone) - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.new) - Create a new read-write lock
+- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.read) - Acquire read lock
+- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.write) - Acquire write lock
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.clone) - Clone the Arc reference
 
 ### ArcAsyncMutex
 
 An asynchronous mutual exclusion lock for Tokio runtime.
 
 **Methods:**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.new) - Create a new async mutex
-- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - Asynchronously acquire lock
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - Try to acquire lock (non-blocking)
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncMutex.html#method.clone) - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.new) - Create a new async mutex
+- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - Asynchronously acquire lock
+- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - Try to acquire lock (non-blocking)
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.clone) - Clone the Arc reference
 
 ### ArcAsyncRwLock
 
 An asynchronous read-write lock for Tokio runtime.
 
 **Methods:**
-- [`new(data: T) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.new) - Create a new async read-write lock
-- [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.read) - Asynchronously acquire read lock
-- [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.write) - Asynchronously acquire write lock
-- [`clone(&self) -> Self`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/struct.ArcAsyncRwLock.html#method.clone) - Clone the Arc reference
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.new) - Create a new async read-write lock
+- [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.read) - Asynchronously acquire read lock
+- [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.write) - Asynchronously acquire write lock
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.clone) - Clone the Arc reference
 
 ### Executor
 
 A trait for executing submitted tasks, similar to JDK's Executor interface.
 
 **Methods:**
-- [`execute(&self, task: Box<dyn FnOnce() + Send + 'static>)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.Executor.html#tymethod.execute) - Execute a synchronous task
-- [`spawn<F>(&self, future: F)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.Executor.html#tymethod.spawn) - Spawn an asynchronous task
+- [`execute(&self, task: Box<dyn FnOnce() + Send + 'static>)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Executor.html#tymethod.execute) - Execute a synchronous task
+- [`spawn<F>(&self, future: F)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Executor.html#tymethod.spawn) - Spawn an asynchronous task
 
 ### ExecutorService
 
 A trait providing lifecycle management for executors, similar to JDK's ExecutorService interface.
 
 **Methods:**
-- [`shutdown(&self)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.shutdown) - Initiate graceful shutdown
-- [`shutdown_now(&self) -> Vec<Box<dyn Runnable>>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.shutdown_now) - Attempt to stop all tasks
-- [`is_shutdown(&self) -> bool`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.is_shutdown) - Check if executor is shutdown
-- [`is_terminated(&self) -> bool`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.is_terminated) - Check if all tasks completed
-- [`await_termination(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.ExecutorService.html#tymethod.await_termination) - Wait for task completion
+- [`shutdown(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.shutdown) - Initiate graceful shutdown
+- [`shutdown_now(&self) -> Vec<Box<dyn Runnable>>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.shutdown_now) - Attempt to stop all tasks
+- [`is_shutdown(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.is_shutdown) - Check if executor is shutdown
+- [`is_terminated(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.is_terminated) - Check if all tasks completed
+- [`await_termination(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.await_termination) - Wait for task completion
 
 ### Runnable
 
 A trait representing a runnable task, similar to JDK's Runnable interface.
 
 **Methods:**
-- [`run(&self)`](https://docs.rs/prism3-concurrent/latest/prism3_concurrent/trait.Runnable.html#tymethod.run) - Execute the task
+- [`run(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Runnable.html#tymethod.run) - Execute the task
 
 ## Design Patterns
 
@@ -455,7 +455,7 @@ For simple, fast operations or equal read/write patterns, regular mutexes may be
 
 ## License
 
-Copyright (c) 2025 3-Prism Co. Ltd. All rights reserved.
+Copyright (c) 2025 - 2026. Haixing Hu, Qubit Co. Ltd. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -482,8 +482,8 @@ When contributing tests, ensure:
 
 ## Author
 
-**Haixing Hu** - *3-Prism Co. Ltd.*
+**Haixing Hu** - *Qubit Co. Ltd.*
 
 ---
 
-For more information about the Prism3 ecosystem, visit our [GitHub homepage](https://github.com/3-prism).
+For more information about Qubit Rust libraries, visit our [GitHub organization](https://github.com/qubit-ltd).

@@ -2,7 +2,7 @@
 
 ## 概述
 
-`ExecutionBuilder` 使用 `prism3_function::ArcTester` 作为条件测试器的类型。通过 `when` 方法，可以接受任何实现了 `Tester` trait 的类型，并自动转换为 `ArcTester`。
+`ExecutionBuilder` 使用 `qubit_function::ArcTester` 作为条件测试器的类型。通过 `when` 方法，可以接受任何实现了 `Tester` trait 的类型，并自动转换为 `ArcTester`。
 
 ## 主要变更
 
@@ -48,10 +48,10 @@ if !self.tester.test() {
 
 ### 3. 依赖添加
 
-在 `Cargo.toml` 中已经包含了 `prism3-function` 依赖：
+在 `Cargo.toml` 中已经包含了 `qubit-function` 依赖：
 ```toml
 [dependencies]
-prism3-function = "0.4.0"
+qubit-function = "0.7.0"
 ```
 
 ## 使用方式
@@ -62,7 +62,7 @@ prism3-function = "0.4.0"
 
 ```rust
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let data = ArcMutex::new(42);
@@ -83,9 +83,9 @@ let result = DoubleCheckedLock::on(&data)
 适用于单次使用和构建器模式：
 
 ```rust
-use prism3_function::BoxTester;
+use qubit_function::BoxTester;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let data = ArcMutex::new(42);
@@ -108,9 +108,9 @@ let result = DoubleCheckedLock::on(&data)
 适用于需要跨线程共享的场景：
 
 ```rust
-use prism3_function::ArcTester;
+use qubit_function::ArcTester;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let data = ArcMutex::new(42);
@@ -136,9 +136,9 @@ let result = DoubleCheckedLock::on(&data)
 使用逻辑操作符组合多个条件：
 
 ```rust
-use prism3_function::BoxTester;
+use qubit_function::BoxTester;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use prism3_concurrent::{DoubleCheckedLock, lock::ArcMutex};
+use qubit_concurrent::{DoubleCheckedLock, lock::ArcMutex};
 
 let running = Arc::new(AtomicBool::new(true));
 let ready = Arc::new(AtomicBool::new(true));
@@ -179,7 +179,7 @@ let result = DoubleCheckedLock::on(&data)
 1. **类型安全**：使用 trait 而不是裸闭包提供了更好的类型安全性
 2. **灵活性**：支持多种 Tester 实现，适应不同场景
 3. **可组合性**：可以使用逻辑操作符（`and`、`or`、`not`）组合多个 Tester
-4. **一致性**：与 `prism3_function` 库中的其他函数式抽象保持一致
+4. **一致性**：与 `qubit_function` 库中的其他函数式抽象保持一致
 
 ## 向后兼容性
 

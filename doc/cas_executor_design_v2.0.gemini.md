@@ -287,7 +287,7 @@ impl<T> CasExecutor<T> {
 ## 五、使用示例
 
 ```rust
-use prism3_concurrent::cas::{CasExecutor, CasAction, DelayStrategy};
+use qubit_concurrent::cas::{CasExecutor, CasAction, DelayStrategy};
 use arc_swap::{ArcSwap, Guard};
 use std::sync::Arc;
 use std::time::Duration;
@@ -411,7 +411,7 @@ fn test_delay_strategy_calculation() {
 ### 并发测试 (`/tests/concurrent_tests.rs`)
 
 ```rust
-use prism3_concurrent::cas::{CasExecutor, CasAction};
+use qubit_concurrent::cas::{CasExecutor, CasAction};
 use arc_swap::ArcSwap;
 use std::sync::Arc;
 use std::thread;
@@ -452,7 +452,7 @@ fn test_concurrent_increment() {
 
 ```rust
 use criterion::{criterion_group, criterion_main, Criterion};
-use prism3_concurrent::cas::{CasExecutor, CasAction};
+use qubit_concurrent::cas::{CasExecutor, CasAction};
 use arc_swap::ArcSwap;
 use std::sync::Arc;
 
@@ -477,7 +477,7 @@ criterion_main!(benches);
 
 ```toml
 [package]
-name = "prism3-rust-concurrent"
+name = "rust-concurrent"
 version = "0.1.0"
 edition = "2021"
 

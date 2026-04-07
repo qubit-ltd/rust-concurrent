@@ -1105,7 +1105,7 @@ impl<T> Default for CasExecutorBuilder<T> {
 
 ```rust
 use arc_swap::ArcSwap;
-use prism3_concurrent::cas::{CasExecutor, CasResult};
+use qubit_concurrent::cas::{CasExecutor, CasResult};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -1624,13 +1624,13 @@ criterion_main!(benches);
 
 ```toml
 [package]
-name = "prism3-rust-concurrent"
+name = "rust-concurrent"
 version = "1.0.0"
 edition = "2021"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 description = "CAS executor for concurrent programming with retry strategies"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/your-org/prism3-rust-concurrent"
+repository = "https://github.com/qubit-ltd/rust-concurrent"
 keywords = ["cas", "concurrency", "lock-free", "retry", "async"]
 categories = ["concurrency", "asynchronous"]
 

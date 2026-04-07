@@ -112,7 +112,7 @@ atomic.inner().store(42, Ordering::Release);
 use std::sync::atomic::AtomicI32 as StdAtomicI32;
 
 // 我们的封装类型
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 ```
 
 ### 3.2 核心结构
@@ -211,7 +211,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(42);
     /// ```
@@ -222,7 +222,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(42);
     /// assert_eq!(atomic.get(), 42);
@@ -234,7 +234,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(0);
     /// atomic.set(42);
@@ -247,7 +247,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// let old = atomic.swap(20);
@@ -269,7 +269,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     ///
@@ -292,7 +292,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     ///
@@ -323,7 +323,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     /// use std::sync::atomic::Ordering;
     ///
     /// let atomic = AtomicI32::new(0);
@@ -354,7 +354,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// let old = atomic.get_and_increment();
@@ -368,7 +368,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// let new = atomic.increment_and_get();
@@ -389,7 +389,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// let old = atomic.get_and_add(5);
@@ -431,7 +431,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// let old = atomic.get_and_update(|x| x * 2);
@@ -447,7 +447,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// let new = atomic.update_and_get(|x| x * 2);
@@ -467,7 +467,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// let old = atomic.get_and_accumulate(5, |a, b| a + b);
@@ -490,7 +490,7 @@ impl AtomicI32 {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicI32;
+    /// use qubit_atomic::::AtomicI32;
     ///
     /// let atomic = AtomicI32::new(10);
     /// atomic.get_and_max(20);
@@ -541,7 +541,7 @@ impl AtomicBool {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicBool;
+    /// use qubit_atomic::::AtomicBool;
     ///
     /// let flag = AtomicBool::new(false);
     /// let old = flag.get_and_set();
@@ -564,7 +564,7 @@ impl AtomicBool {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicBool;
+    /// use qubit_atomic::::AtomicBool;
     ///
     /// let flag = AtomicBool::new(false);
     /// assert_eq!(flag.get_and_negate(), false);
@@ -594,7 +594,7 @@ impl AtomicBool {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicBool;
+    /// use qubit_atomic::::AtomicBool;
     ///
     /// let flag = AtomicBool::new(false);
     ///
@@ -632,7 +632,7 @@ impl<T> AtomicRef<T> {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicRef;
+    /// use qubit_atomic::::AtomicRef;
     /// use std::sync::Arc;
     ///
     /// let data = Arc::new(42);
@@ -645,7 +645,7 @@ impl<T> AtomicRef<T> {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicRef;
+    /// use qubit_atomic::::AtomicRef;
     /// use std::sync::Arc;
     ///
     /// let atomic = AtomicRef::new(Arc::new(42));
@@ -659,7 +659,7 @@ impl<T> AtomicRef<T> {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicRef;
+    /// use qubit_atomic::::AtomicRef;
     /// use std::sync::Arc;
     ///
     /// let atomic = AtomicRef::new(Arc::new(42));
@@ -688,7 +688,7 @@ impl<T> AtomicRef<T> {
     /// # 示例
     ///
     /// ```rust
-    /// use prism3_rust_concurrent::atomic::AtomicRef;
+    /// use qubit_atomic::::AtomicRef;
     /// use std::sync::Arc;
     ///
     /// let atomic = AtomicRef::new(Arc::new(10));
@@ -829,7 +829,7 @@ impl AtomicInteger for AtomicI32 {
 ### 6.1 基础计数器
 
 ```rust
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 use std::sync::Arc;
 use std::thread;
 
@@ -862,7 +862,7 @@ fn main() {
 ### 6.2 CAS 循环
 
 ```rust
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 
 fn increment_even_only(atomic: &AtomicI32) -> Result<i32, &'static str> {
     let mut current = atomic.get();
@@ -895,7 +895,7 @@ fn main() {
 ### 6.3 函数式更新
 
 ```rust
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 
 fn main() {
     let atomic = AtomicI32::new(10);
@@ -922,7 +922,7 @@ fn main() {
 ### 6.4 原子引用
 
 ```rust
-use prism3_rust_concurrent::atomic::AtomicRef;
+use qubit_atomic::::AtomicRef;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -964,7 +964,7 @@ fn main() {
 ### 6.5 布尔标志
 
 ```rust
-use prism3_rust_concurrent::atomic::AtomicBool;
+use qubit_atomic::::AtomicBool;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -1021,7 +1021,7 @@ fn main() {
 ### 6.6 使用 Trait 的泛型代码
 
 ```rust
-use prism3_rust_concurrent::atomic::{Atomic, AtomicInteger, AtomicI32, AtomicI64};
+use qubit_atomic::::{Atomic, AtomicInteger, AtomicI32, AtomicI64};
 
 /// 通用的原子计数器
 fn increment_atomic<T>(atomic: &T) -> T::Value
@@ -1044,7 +1044,7 @@ fn main() {
 ### 6.7 高性能场景：直接操作底层类型
 
 ```rust
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 use std::sync::atomic::Ordering;
 
 fn high_performance_counter() {
@@ -1540,7 +1540,7 @@ cargo rustc --release -- --emit=asm
 
 # 或使用 cargo-show-asm
 cargo install cargo-show-asm
-cargo asm --release prism3_rust_concurrent::atomic::AtomicI32::get
+cargo asm --release qubit_atomic::::AtomicI32::get
 ```
 
 ### 8.2 内存序性能对比
@@ -1719,7 +1719,7 @@ cargo asm --release prism3_rust_concurrent::atomic::AtomicI32::get
 ## 10. 模块结构
 
 ```
-prism3-rust-concurrent/
+rust-concurrent/
 ├── src/
 │   ├── lib.rs
 │   ├── atomic/                      # 新增：原子类型模块
@@ -1902,7 +1902,7 @@ fn test_memory_ordering() {
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn bench_atomic_increment(c: &mut Criterion) {
-    use prism3_rust_concurrent::atomic::AtomicI32;
+    use qubit_atomic::::AtomicI32;
 
     c.bench_function("atomic_increment", |b| {
         let atomic = AtomicI32::new(0);
@@ -2046,7 +2046,7 @@ atomic.increment_and_get();
 ```rust
 use std::sync::atomic::AtomicI32 as StdAtomicI32;
 use std::sync::atomic::Ordering;
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 
 impl From<StdAtomicI32> for AtomicI32 {
     fn from(std_atomic: StdAtomicI32) -> Self {
@@ -2094,7 +2094,7 @@ fn interop_example() {
 ```rust
 // 可以根据需要在两者之间转换
 use crossbeam_utils::atomic::AtomicCell;
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 
 let atomic = AtomicI32::new(42);
 let cell = AtomicCell::new(atomic.get());
@@ -2106,7 +2106,7 @@ let cell = AtomicCell::new(atomic.get());
 
 ```rust
 use parking_lot::Mutex;
-use prism3_rust_concurrent::atomic::AtomicBool;
+use qubit_atomic::::AtomicBool;
 
 struct Resource {
     data: Mutex<Vec<u8>>,
@@ -2141,7 +2141,7 @@ struct Resource {
 /// # 基础示例
 ///
 /// ```rust
-/// use prism3_rust_concurrent::atomic::AtomicI32;
+/// use qubit_atomic::::AtomicI32;
 /// use std::sync::Arc;
 /// use std::thread;
 ///
@@ -2168,7 +2168,7 @@ struct Resource {
 /// # 高级用法：直接访问底层类型
 ///
 /// ```rust
-/// use prism3_rust_concurrent::atomic::AtomicI32;
+/// use qubit_atomic::::AtomicI32;
 /// use std::sync::atomic::Ordering;
 ///
 /// let atomic = AtomicI32::new(0);
@@ -2203,7 +2203,7 @@ atomic.store(42, Ordering::Release);
 let old = atomic.fetch_add(1, Ordering::Relaxed);
 
 // 迁移后：使用封装（大多数情况）
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 
 let atomic = AtomicI32::new(0);
 let value = atomic.get();                // 自动 Acquire
@@ -2253,7 +2253,7 @@ int current = counter.incrementAndGet();
 boolean success = counter.compareAndSet(10, 20);
 
 // Rust 等价代码
-use prism3_rust_concurrent::atomic::AtomicI32;
+use qubit_atomic::::AtomicI32;
 
 let counter = AtomicI32::new(0);
 let old = counter.get_and_increment();

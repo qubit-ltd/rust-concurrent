@@ -1,4 +1,12 @@
 #!/bin/bash
+################################################################################
+#
+#    Copyright (c) 2026.
+#    Haixing Hu, Qubit Co. Ltd.
+#
+#    All rights reserved.
+#
+################################################################################
 #
 # Local CI check script
 # Run this script before committing code to ensure it passes all CircleCI checks
@@ -65,7 +73,7 @@ if cargo +nightly clippy --all-targets --all-features -- -D warnings 2>&1 | tee 
     cat /tmp/clippy-output.txt
     echo ""
     echo "Please try to auto-fix with:"
-    echo "  cargo +nightly clippy --fix"
+    echo "  cargo +nightly clippy --fix --all-targets --all-features"
     exit 1
 else
     print_success "Clippy checks passed"

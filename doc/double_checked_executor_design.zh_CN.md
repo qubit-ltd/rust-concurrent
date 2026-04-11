@@ -113,7 +113,7 @@ stateDiagram-v2
 ### 3.2 模块结构
 
 ```
-rust-concurrent/
+rs-concurrent/
 ├── src/
 │   ├── lib.rs
 │   ├── executor.rs           # 执行器接口抽象 trait（Runnable、Callable、Executor 等）
@@ -1232,7 +1232,7 @@ let value = result.into_result()?;
 ### 10.1 项目内部资料
 
 - [Java 版本源码](../external/common-java/src/main/java/ltd/qubit/commons/concurrent/DoubleCheckedLockExecutor.java)
-- [rust-concurrent Lock 模块](../src/lock/)
+- [rs-concurrent Lock 模块](../src/lock/)
   - [Lock trait](../src/lock/lock.rs)
   - [ReadWriteLock trait](../src/lock/read_write_lock.rs)
   - [ArcMutex 包装器](../src/lock/arc_mutex.rs)

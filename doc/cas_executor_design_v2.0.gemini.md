@@ -477,7 +477,7 @@ criterion_main!(benches);
 
 ```toml
 [package]
-name = "rust-concurrent"
+name = "qubit-concurrent"
 version = "0.1.0"
 edition = "2021"
 

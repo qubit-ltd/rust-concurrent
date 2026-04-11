@@ -1719,7 +1719,7 @@ cargo asm --release qubit_atomic::::AtomicI32::get
 ## 10. 模块结构
 
 ```
-rust-concurrent/
+rs-concurrent/
 ├── src/
 │   ├── lib.rs
 │   ├── atomic/                      # 新增：原子类型模块

@@ -1,7 +1,7 @@
 # Qubit Concurrent
 
-[![CircleCI](https://circleci.com/gh/qubit-ltd/rust-concurrent.svg?style=shield)](https://circleci.com/gh/qubit-ltd/rust-concurrent)
-[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rust-concurrent/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rust-concurrent?branch=main)
+[![CircleCI](https://circleci.com/gh/qubit-ltd/rs-concurrent.svg?style=shield)](https://circleci.com/gh/qubit-ltd/rs-concurrent)
+[![Coverage Status](https://coveralls.io/repos/github/qubit-ltd/rs-concurrent/badge.svg?branch=main)](https://coveralls.io/github/qubit-ltd/rs-concurrent?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/qubit-concurrent.svg?color=blue)](https://crates.io/crates/qubit-concurrent)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)

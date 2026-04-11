@@ -117,14 +117,14 @@ jobs:
 
       - name: Generate coverage
         run: |
-          cd rust-concurrent
+          cd rs-concurrent
           cargo llvm-cov --lcov --output-path lcov.info
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v3
         with:
-          files: rust-concurrent/lcov.info
-          flags: rust-concurrent
+          files: rs-concurrent/lcov.info
+          flags: rs-concurrent
 ```
 
 ## 常见问题

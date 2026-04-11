@@ -1624,13 +1624,13 @@ criterion_main!(benches);
 
 ```toml
 [package]
-name = "rust-concurrent"
+name = "qubit-concurrent"
 version = "1.0.0"
 edition = "2021"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 description = "CAS executor for concurrent programming with retry strategies"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/qubit-ltd/rust-concurrent"
+repository = "https://github.com/qubit-ltd/rs-concurrent"
 keywords = ["cas", "concurrency", "lock-free", "retry", "async"]
 categories = ["concurrency", "asynchronous"]
 

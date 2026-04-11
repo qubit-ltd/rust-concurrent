@@ -21,7 +21,7 @@
 - **Rust 化**：以 `Result<T, CasError>` 对外；提供可选“无异常风格”的结构化返回版本（等价 Java 的 `tryExecute`）。
 - **依赖复用**：`qubit-retry`（已具备结果/错误两路决策、延迟策略、超时、监听器）；必要时可提供异步版本（真超时中断）。
 
-### 4. 模块与类型（建议放置：`rust-concurrent/src/cas/`）
+### 4. 模块与类型（建议放置：`rs-concurrent/src/cas/`）
 - `CasResult<T>`
   - 字段：`success: bool`、`should_retry: bool`、`old_state: Arc<T>`（或 `Option<Arc<T>>`）、`new_state: Option<Arc<T>>`、`error_code: Option<String>`、`error_message: Option<String>`、`attempts: u32`。
   - 构造：`success(old, new)`；`retry(old, code, msg, attempts)`；`abort(old, code, msg)`。

@@ -1,6 +1,6 @@
 [package]
 name = "qubit-concurrent"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -28,19 +28,19 @@ doctest = false
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.0", features = ["sync"] }
-# Core utilities
-qubit-common = "0.5.3"
-# Functional programming utilities
-qubit-function = "0.7.3"
-# Atomic operations
-qubit-atomic = "0.7.2"
+tokio = { version = "1.5", features = ["sync"] }
 # Error handling
-thiserror = "2.0.17"
+thiserror = "2.0"
 # Logging
 log = "0.4"
 # High-performance synchronization primitives
 parking_lot = "0.12"
+# Core utilities
+qubit-common = "0.5.3"
+# Functional programming utilities
+qubit-function = "0.8.1"
+# Atomic operations
+qubit-atomic = "0.7.2"
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.5", features = ["macros", "rt-multi-thread", "time"] }

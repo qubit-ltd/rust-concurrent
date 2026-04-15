@@ -1,6 +1,6 @@
 [package]
 name = "qubit-concurrent"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -36,11 +36,11 @@ log = "0.4"
 # High-performance synchronization primitives
 parking_lot = "0.12"
 # Core utilities
-qubit-common = "0.5.3"
+qubit-common = "0.5"
 # Functional programming utilities
-qubit-function = "0.8.1"
+qubit-function = "0.8"
 # Atomic operations
-qubit-atomic = "0.7.2"
+qubit-atomic = "0.7"
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }

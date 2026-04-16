@@ -23,6 +23,18 @@ use std::sync::{
 
 use parking_lot::Mutex as ParkingLotMutex;
 
+/// Non-blocking lock acquisition error.
+///
+/// This error type is used by `try_read_result` and `try_write_result` to
+/// distinguish lock contention from poisoned lock states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TryLockError {
+    /// The lock is currently held by another thread.
+    WouldBlock,
+    /// The lock is poisoned due to a panic while the lock was held.
+    Poisoned,
+}
+
 /// Unified synchronous lock trait
 ///
 /// Provides a unified interface for different types of synchronous locks,
@@ -216,6 +228,22 @@ pub trait Lock<T: ?Sized> {
     where
         F: FnOnce(&T) -> R;
 
+    /// Attempts to acquire a read lock and returns a detailed error on failure.
+    ///
+    /// Compared to `try_read`, this method preserves the reason for failure:
+    /// contention (`WouldBlock`) or poisoned lock (`Poisoned`).
+    ///
+    /// The default implementation delegates to `try_read` and maps failure to
+    /// `WouldBlock`. Implementations with richer lock error information should
+    /// override this method.
+    #[inline]
+    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.try_read(f).ok_or(TryLockError::WouldBlock)
+    }
+
     /// Attempts to acquire a write lock without blocking
     ///
     /// This method tries to acquire a write lock immediately. If the lock
@@ -251,6 +279,22 @@ pub trait Lock<T: ?Sized> {
     fn try_write<R, F>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut T) -> R;
+
+    /// Attempts to acquire a write lock and returns a detailed error on failure.
+    ///
+    /// Compared to `try_write`, this method preserves the reason for failure:
+    /// contention (`WouldBlock`) or poisoned lock (`Poisoned`).
+    ///
+    /// The default implementation delegates to `try_write` and maps failure to
+    /// `WouldBlock`. Implementations with richer lock error information should
+    /// override this method.
+    #[inline]
+    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.try_write(f).ok_or(TryLockError::WouldBlock)
+    }
 }
 
 /// Synchronous mutex implementation of the Lock trait
@@ -290,10 +334,18 @@ impl<T: ?Sized> Lock<T> for Mutex<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        if let Ok(guard) = self.try_lock() {
-            Some(f(&*guard))
-        } else {
-            None
+        self.try_read_result(f).ok()
+    }
+
+    #[inline]
+    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        match self.try_lock() {
+            Ok(guard) => Ok(f(&*guard)),
+            Err(std::sync::TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+            Err(std::sync::TryLockError::Poisoned(_)) => Err(TryLockError::Poisoned),
         }
     }
 
@@ -302,10 +354,18 @@ impl<T: ?Sized> Lock<T> for Mutex<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        if let Ok(mut guard) = self.try_lock() {
-            Some(f(&mut *guard))
-        } else {
-            None
+        self.try_write_result(f).ok()
+    }
+
+    #[inline]
+    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        match self.try_lock() {
+            Ok(mut guard) => Ok(f(&mut *guard)),
+            Err(std::sync::TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+            Err(std::sync::TryLockError::Poisoned(_)) => Err(TryLockError::Poisoned),
         }
     }
 }
@@ -348,10 +408,18 @@ impl<T: ?Sized> Lock<T> for RwLock<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        if let Ok(guard) = self.try_read() {
-            Some(f(&*guard))
-        } else {
-            None
+        self.try_read_result(f).ok()
+    }
+
+    #[inline]
+    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        match self.try_read() {
+            Ok(guard) => Ok(f(&*guard)),
+            Err(std::sync::TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+            Err(std::sync::TryLockError::Poisoned(_)) => Err(TryLockError::Poisoned),
         }
     }
 
@@ -360,10 +428,18 @@ impl<T: ?Sized> Lock<T> for RwLock<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        if let Ok(mut guard) = self.try_write() {
-            Some(f(&mut *guard))
-        } else {
-            None
+        self.try_write_result(f).ok()
+    }
+
+    #[inline]
+    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        match self.try_write() {
+            Ok(mut guard) => Ok(f(&mut *guard)),
+            Err(std::sync::TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+            Err(std::sync::TryLockError::Poisoned(_)) => Err(TryLockError::Poisoned),
         }
     }
 }
@@ -414,7 +490,15 @@ impl<T: ?Sized> Lock<T> for ParkingLotMutex<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        self.try_lock().map(|guard| f(&*guard))
+        self.try_read_result(f).ok()
+    }
+
+    #[inline]
+    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.try_lock().map(|guard| f(&*guard)).ok_or(TryLockError::WouldBlock)
     }
 
     #[inline]
@@ -422,6 +506,14 @@ impl<T: ?Sized> Lock<T> for ParkingLotMutex<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        self.try_lock().map(|mut guard| f(&mut *guard))
+        self.try_write_result(f).ok()
+    }
+
+    #[inline]
+    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.try_lock().map(|mut guard| f(&mut *guard)).ok_or(TryLockError::WouldBlock)
     }
 }

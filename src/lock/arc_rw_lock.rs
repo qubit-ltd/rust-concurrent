@@ -20,7 +20,10 @@ use std::sync::{
     RwLock,
 };
 
-use crate::lock::Lock;
+use crate::lock::{
+    Lock,
+    TryLockError,
+};
 
 /// Synchronous Read-Write Lock Wrapper
 ///
@@ -205,10 +208,21 @@ impl<T> Lock<T> for ArcRwLock<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        if let Ok(guard) = self.inner.try_read() {
-            Some(f(&*guard))
-        } else {
-            None
+        self.try_read_result(f).ok()
+    }
+
+    /// Attempts to acquire a read lock and preserves detailed failure reason
+    ///
+    /// This method distinguishes lock contention from poisoned lock state.
+    #[inline]
+    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        match self.inner.try_read() {
+            Ok(guard) => Ok(f(&*guard)),
+            Err(std::sync::TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+            Err(std::sync::TryLockError::Poisoned(_)) => Err(TryLockError::Poisoned),
         }
     }
 
@@ -249,10 +263,21 @@ impl<T> Lock<T> for ArcRwLock<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        if let Ok(mut guard) = self.inner.try_write() {
-            Some(f(&mut *guard))
-        } else {
-            None
+        self.try_write_result(f).ok()
+    }
+
+    /// Attempts to acquire a write lock and preserves detailed failure reason
+    ///
+    /// This method distinguishes lock contention from poisoned lock state.
+    #[inline]
+    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        match self.inner.try_write() {
+            Ok(mut guard) => Ok(f(&mut *guard)),
+            Err(std::sync::TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+            Err(std::sync::TryLockError::Poisoned(_)) => Err(TryLockError::Poisoned),
         }
     }
 }

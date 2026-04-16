@@ -21,6 +21,7 @@ use std::{
 use qubit_concurrent::{
     lock::ArcStdMutex,
     Lock,
+    TryLockError,
 };
 
 #[cfg(test)]
@@ -198,6 +199,52 @@ mod arc_std_mutex_tests {
             "Expected None for poisoned lock, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_arc_mutex_try_read_result_returns_would_block() {
+        let mutex = Arc::new(ArcStdMutex::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+
+        let handle = thread::spawn(move || {
+            mutex_clone.write(|value| {
+                *value += 1;
+                barrier_clone.wait();
+                thread::sleep(std::time::Duration::from_millis(100));
+            });
+        });
+
+        barrier.wait();
+        let result = mutex.try_read_result(|value| *value);
+        assert_eq!(result, Err(TryLockError::WouldBlock));
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_arc_mutex_try_read_result_returns_poisoned() {
+        let mutex = Arc::new(ArcStdMutex::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+
+        let handle = thread::spawn(move || {
+            mutex_clone.write(|value| {
+                *value += 1;
+                barrier_clone.wait();
+                panic!("intentional panic to poison the lock");
+            });
+        });
+
+        barrier.wait();
+        let _ = handle.join();
+
+        let result = mutex.try_read_result(|value| *value);
+        assert_eq!(result, Err(TryLockError::Poisoned));
     }
 
     #[test]

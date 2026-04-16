@@ -27,6 +27,7 @@ use qubit_concurrent::lock::{
     ArcRwLock,
     ArcStdMutex,
     Lock,
+    TryLockError,
 };
 
 #[cfg(test)]
@@ -330,6 +331,49 @@ mod lock_trait_tests {
             *value
         });
         assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_std_mutex_try_read_result_returns_would_block_when_locked() {
+        let mutex = Arc::new(Mutex::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+
+        let handle = thread::spawn(move || {
+            let _guard = mutex_clone.lock().unwrap();
+            barrier_clone.wait();
+            thread::sleep(std::time::Duration::from_millis(100));
+        });
+
+        barrier.wait();
+        let result = Lock::try_read_result(&*mutex, |value| *value);
+        assert_eq!(result, Err(TryLockError::WouldBlock));
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_std_mutex_try_read_result_returns_poisoned_when_poisoned() {
+        let mutex = Arc::new(Mutex::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+
+        let handle = thread::spawn(move || {
+            let mut guard = mutex_clone.lock().unwrap();
+            *guard += 1;
+            barrier_clone.wait();
+            panic!("intentional panic to poison the lock");
+        });
+
+        barrier.wait();
+        let _ = handle.join();
+
+        let result = Lock::try_read_result(&*mutex, |value| *value);
+        assert_eq!(result, Err(TryLockError::Poisoned));
     }
 }
 
@@ -729,5 +773,43 @@ mod rwlock_trait_tests {
             *value
         });
         assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_std_rwlock_try_write_result_returns_would_block_when_read_locked() {
+        let rwlock = Arc::new(RwLock::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let rwlock_clone = rwlock.clone();
+        let barrier_clone = barrier.clone();
+
+        let handle = thread::spawn(move || {
+            let _guard = rwlock_clone.read().unwrap();
+            barrier_clone.wait();
+            thread::sleep(std::time::Duration::from_millis(100));
+        });
+
+        barrier.wait();
+        let result = Lock::try_write_result(&*rwlock, |value| *value);
+        assert_eq!(result, Err(TryLockError::WouldBlock));
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_std_rwlock_try_read_result_returns_poisoned_when_poisoned() {
+        let rwlock = Arc::new(RwLock::new(0));
+
+        let rwlock_clone = rwlock.clone();
+        let handle = thread::spawn(move || {
+            let mut guard = rwlock_clone.write().unwrap();
+            *guard += 1;
+            panic!("intentional panic to poison the lock");
+        });
+
+        let _ = handle.join();
+
+        let result = Lock::try_read_result(&*rwlock, |value| *value);
+        assert_eq!(result, Err(TryLockError::Poisoned));
     }
 }

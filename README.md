@@ -18,7 +18,7 @@ Qubit Concurrent provides easy-to-use wrappers around both synchronous and async
 ### 🔒 **Synchronous Locks**
 - **ArcMutex**: Thread-safe mutual exclusion lock wrapper with `Arc` integration
 - **ArcRwLock**: Thread-safe read-write lock wrapper supporting multiple concurrent readers
-- **Convenient API**: `with_lock` and `try_with_lock` methods for cleaner lock handling
+- **Convenient API**: `read`/`write` and `try_read`/`try_write` methods for cleaner lock handling
 - **Automatic RAII**: Ensures proper lock release through scope-based management
 
 ### 🚀 **Asynchronous Locks**
@@ -45,7 +45,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-qubit-concurrent = "0.2.1"
+qubit-concurrent = "0.3.3"
 ```
 
 ## Quick Start
@@ -64,7 +64,7 @@ fn main() {
     for _ in 0..10 {
         let counter = counter.clone();
         let handle = thread::spawn(move || {
-            counter.with_lock(|value| {
+            counter.write(|value| {
                 *value += 1;
             });
         });
@@ -77,7 +77,7 @@ fn main() {
     }
 
     // Read final value
-    let result = counter.with_lock(|value| *value);
+    let result = counter.read(|value| *value);
     println!("Final counter: {}", result); // Prints: Final counter: 10
 }
 ```
@@ -129,7 +129,7 @@ async fn main() {
     for _ in 0..10 {
         let counter = counter.clone();
         let handle = tokio::spawn(async move {
-            counter.with_lock(|value| {
+            counter.write(|value| {
                 *value += 1;
             }).await;
         });
@@ -142,7 +142,7 @@ async fn main() {
     }
 
     // Read final value
-    let result = counter.with_lock(|value| *value).await;
+    let result = counter.read(|value| *value).await;
     println!("Final counter: {}", result); // Prints: Final counter: 10
 }
 ```
@@ -190,7 +190,7 @@ fn main() {
     let mutex = ArcMutex::new(42);
 
     // Try to acquire lock without blocking
-    match mutex.try_with_lock(|value| *value) {
+    match mutex.try_read(|value| *value) {
         Some(v) => println!("Got value: {}", v),
         None => println!("Lock is busy"),
     }
@@ -200,7 +200,7 @@ fn main() {
 ### Task Executor
 
 ```rust
-use qubit_concurrent::{Executor, ExecutorService};
+use qubit_concurrent::{AsyncExecutor, Executor};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -214,7 +214,9 @@ impl Executor for SimpleExecutor {
         self.task_count.fetch_add(1, Ordering::SeqCst);
         task();
     }
+}
 
+impl AsyncExecutor for SimpleExecutor {
     fn spawn<F>(&self, future: F)
     where
         F: std::future::Future<Output = ()> + Send + 'static,
@@ -249,8 +251,12 @@ A synchronous mutual exclusion lock wrapper with `Arc` integration.
 
 **Methods:**
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.new) - Create a new mutex
-- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.with_lock) - Acquire lock and execute closure
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_with_lock) - Try to acquire lock without blocking
+- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.read) - Acquire read lock and execute closure
+- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.write) - Acquire write lock and execute closure
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_read) - Try to acquire read lock without blocking
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_write) - Try to acquire write lock without blocking
+- [`try_read_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_read_result) - Try to acquire read lock with a detailed error
+- [`try_write_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_write_result) - Try to acquire write lock with a detailed error
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.clone) - Clone the Arc reference
 
 ### ArcRwLock
@@ -261,6 +267,10 @@ A synchronous read-write lock wrapper supporting multiple concurrent readers.
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.new) - Create a new read-write lock
 - [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.read) - Acquire read lock
 - [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.write) - Acquire write lock
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_read) - Try to acquire read lock without blocking
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_write) - Try to acquire write lock without blocking
+- [`try_read_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_read_result) - Try to acquire read lock with a detailed error
+- [`try_write_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_write_result) - Try to acquire write lock with a detailed error
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.clone) - Clone the Arc reference
 
 ### ArcAsyncMutex
@@ -269,8 +279,10 @@ An asynchronous mutual exclusion lock for Tokio runtime.
 
 **Methods:**
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.new) - Create a new async mutex
-- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - Asynchronously acquire lock
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - Try to acquire lock (non-blocking)
+- [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.read) - Asynchronously acquire read lock
+- [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.write) - Asynchronously acquire write lock
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_read) - Try to acquire read lock (non-blocking)
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_write) - Try to acquire write lock (non-blocking)
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.clone) - Clone the Arc reference
 
 ### ArcAsyncRwLock
@@ -281,6 +293,8 @@ An asynchronous read-write lock for Tokio runtime.
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.new) - Create a new async read-write lock
 - [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.read) - Asynchronously acquire read lock
 - [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.write) - Asynchronously acquire write lock
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.try_read) - Try to acquire read lock (non-blocking)
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.try_write) - Try to acquire write lock (non-blocking)
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.clone) - Clone the Arc reference
 
 ### Executor
@@ -289,7 +303,13 @@ A trait for executing submitted tasks, similar to JDK's Executor interface.
 
 **Methods:**
 - [`execute(&self, task: Box<dyn FnOnce() + Send + 'static>)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Executor.html#tymethod.execute) - Execute a synchronous task
-- [`spawn<F>(&self, future: F)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Executor.html#tymethod.spawn) - Spawn an asynchronous task
+
+### AsyncExecutor
+
+A trait for spawning asynchronous tasks.
+
+**Methods:**
+- [`spawn<F>(&self, future: F)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.AsyncExecutor.html#tymethod.spawn) - Spawn an asynchronous task
 
 ### ExecutorService
 
@@ -351,7 +371,7 @@ let counter = ArcMutex::new(0);
 // Share counter across threads
 let counter_clone = counter.clone();
 thread::spawn(move || {
-    counter_clone.with_lock(|c| *c += 1);
+    counter_clone.write(|c| *c += 1);
 });
 ```
 
@@ -378,9 +398,9 @@ let state = ArcAsyncMutex::new(TaskState::Idle);
 let state_clone = state.clone();
 
 tokio::spawn(async move {
-    state_clone.with_lock(|s| *s = TaskState::Running).await;
+    state_clone.write(|s| *s = TaskState::Running).await;
     // ... do work ...
-    state_clone.with_lock(|s| *s = TaskState::Complete).await;
+    state_clone.write(|s| *s = TaskState::Complete).await;
 });
 ```
 

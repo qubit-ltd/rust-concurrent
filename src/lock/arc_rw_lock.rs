@@ -15,15 +15,9 @@
 //!
 //! Haixing Hu
 
-use std::sync::{
-    Arc,
-    RwLock,
-};
+use std::sync::{Arc, RwLock};
 
-use crate::lock::{
-    Lock,
-    TryLockError,
-};
+use crate::lock::{Lock, TryLockError};
 
 /// Synchronous Read-Write Lock Wrapper
 ///
@@ -50,8 +44,7 @@ use crate::lock::{
 /// # Usage Example
 ///
 /// ```rust,ignore
-/// use qubit_concurrent::lock::{ArcRwLock, ReadWriteLock};
-/// use std::sync::Arc;
+/// use qubit_concurrent::lock::{ArcRwLock, Lock};
 ///
 /// let data = ArcRwLock::new(String::from("Hello"));
 ///

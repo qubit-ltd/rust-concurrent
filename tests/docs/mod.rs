@@ -6,10 +6,6 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! # Concurrent Module Tests
-//!
-//! Tests for various concurrent utility functions.
+//! Documentation consistency tests.
 
-mod docs;
-mod double_checked;
-mod lock;
+mod readme_tests;

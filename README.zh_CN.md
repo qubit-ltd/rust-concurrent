@@ -18,7 +18,7 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 ### 🔒 **同步锁**
 - **ArcMutex**：集成 `Arc` 的线程安全互斥锁包装器
 - **ArcRwLock**：支持多个并发读者的线程安全读写锁包装器
-- **便捷 API**：提供 `with_lock` 和 `try_with_lock` 方法，实现更清晰的锁处理
+- **便捷 API**：提供 `read`/`write` 与 `try_read`/`try_write` 方法，实现更清晰的锁处理
 - **自动 RAII**：通过基于作用域的管理确保正确释放锁
 
 ### 🚀 **异步锁**
@@ -39,7 +39,7 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 
 ```toml
 [dependencies]
-qubit-concurrent = "0.2.1"
+qubit-concurrent = "0.3.3"
 ```
 
 ## 快速开始
@@ -58,7 +58,7 @@ fn main() {
     for _ in 0..10 {
         let counter = counter.clone();
         let handle = thread::spawn(move || {
-            counter.with_lock(|value| {
+            counter.write(|value| {
                 *value += 1;
             });
         });
@@ -71,7 +71,7 @@ fn main() {
     }
 
     // 读取最终值
-    let result = counter.with_lock(|value| *value);
+    let result = counter.read(|value| *value);
     println!("最终计数: {}", result); // 输出: 最终计数: 10
 }
 ```
@@ -123,7 +123,7 @@ async fn main() {
     for _ in 0..10 {
         let counter = counter.clone();
         let handle = tokio::spawn(async move {
-            counter.with_lock(|value| {
+            counter.write(|value| {
                 *value += 1;
             }).await;
         });
@@ -136,7 +136,7 @@ async fn main() {
     }
 
     // 读取最终值
-    let result = counter.with_lock(|value| *value).await;
+    let result = counter.read(|value| *value).await;
     println!("最终计数: {}", result); // 输出: 最终计数: 10
 }
 ```
@@ -184,7 +184,7 @@ fn main() {
     let mutex = ArcMutex::new(42);
 
     // 尝试获取锁而不阻塞
-    match mutex.try_with_lock(|value| *value) {
+    match mutex.try_read(|value| *value) {
         Some(v) => println!("获取到值: {}", v),
         None => println!("锁正忙"),
     }
@@ -199,8 +199,12 @@ fn main() {
 
 **方法：**
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.new) - 创建新的互斥锁
-- [`with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.with_lock) - 获取锁并执行闭包
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_with_lock) - 尝试获取锁而不阻塞
+- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.read) - 获取读锁并执行闭包
+- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.write) - 获取写锁并执行闭包
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_read) - 尝试获取读锁而不阻塞
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_write) - 尝试获取写锁而不阻塞
+- [`try_read_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_read_result) - 尝试获取读锁并返回详细错误
+- [`try_write_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.try_write_result) - 尝试获取写锁并返回详细错误
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html#method.clone) - 克隆 Arc 引用
 
 ### ArcRwLock
@@ -211,6 +215,10 @@ fn main() {
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.new) - 创建新的读写锁
 - [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.read) - 获取读锁
 - [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.write) - 获取写锁
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_read) - 尝试获取读锁而不阻塞
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_write) - 尝试获取写锁而不阻塞
+- [`try_read_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_read_result) - 尝试获取读锁并返回详细错误
+- [`try_write_result<F, R>(&self, f: F) -> Result<R, TryLockError>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.try_write_result) - 尝试获取写锁并返回详细错误
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html#method.clone) - 克隆 Arc 引用
 
 ### ArcAsyncMutex
@@ -219,8 +227,10 @@ fn main() {
 
 **方法：**
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.new) - 创建新的异步互斥锁
-- [`async with_lock<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.with_lock) - 异步获取锁
-- [`try_with_lock<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_with_lock) - 尝试获取锁（非阻塞）
+- [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.read) - 异步获取读锁
+- [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.write) - 异步获取写锁
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_read) - 尝试获取读锁（非阻塞）
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.try_write) - 尝试获取写锁（非阻塞）
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncMutex.html#method.clone) - 克隆 Arc 引用
 
 ### ArcAsyncRwLock
@@ -231,6 +241,8 @@ fn main() {
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.new) - 创建新的异步读写锁
 - [`async read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.read) - 异步获取读锁
 - [`async write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.write) - 异步获取写锁
+- [`try_read<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.try_read) - 尝试获取读锁（非阻塞）
+- [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.try_write) - 尝试获取写锁（非阻塞）
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.clone) - 克隆 Arc 引用
 
 ## 设计模式
@@ -275,7 +287,7 @@ let counter = ArcMutex::new(0);
 // 跨线程共享计数器
 let counter_clone = counter.clone();
 thread::spawn(move || {
-    counter_clone.with_lock(|c| *c += 1);
+    counter_clone.write(|c| *c += 1);
 });
 ```
 
@@ -302,9 +314,9 @@ let state = ArcAsyncMutex::new(TaskState::Idle);
 let state_clone = state.clone();
 
 tokio::spawn(async move {
-    state_clone.with_lock(|s| *s = TaskState::Running).await;
+    state_clone.write(|s| *s = TaskState::Running).await;
     // ... 执行工作 ...
-    state_clone.with_lock(|s| *s = TaskState::Complete).await;
+    state_clone.write(|s| *s = TaskState::Complete).await;
 });
 ```
 

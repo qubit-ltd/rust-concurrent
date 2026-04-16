@@ -46,14 +46,11 @@ use crate::lock::AsyncLock;
 /// # Usage Example
 ///
 /// ```rust,ignore
-/// use qubit_concurrent::lock::{ArcAsyncRwLock,
-///                                     AsyncReadWriteLock};
-/// use std::sync::Arc;
+/// use qubit_concurrent::lock::{ArcAsyncRwLock, AsyncLock};
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     let data = ArcAsyncRwLock::new(String::from("Hello"));
-///     let data = Arc::new(data);
 ///
 ///     // Multiple read operations can execute concurrently
 ///     data.read(|s| {
@@ -125,8 +122,7 @@ where
     /// # Example
     ///
     /// ```rust,ignore
-    /// use qubit_concurrent::lock::{ArcAsyncRwLock,
-    ///                                     AsyncReadWriteLock};
+    /// use qubit_concurrent::lock::{ArcAsyncRwLock, AsyncLock};
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -166,8 +162,7 @@ where
     /// # Example
     ///
     /// ```rust,ignore
-    /// use qubit_concurrent::lock::{ArcAsyncRwLock,
-    ///                                     AsyncReadWriteLock};
+    /// use qubit_concurrent::lock::{ArcAsyncRwLock, AsyncLock};
     ///
     /// #[tokio::main]
     /// async fn main() {

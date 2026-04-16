@@ -35,12 +35,8 @@ thiserror = "2.0"
 log = "0.4"
 # High-performance synchronization primitives
 parking_lot = "0.12"
-# Core utilities
-qubit-common = "0.5"
 # Functional programming utilities
 qubit-function = "0.8"
-# Atomic operations
-qubit-atomic = "0.7"
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }

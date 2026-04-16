@@ -39,7 +39,7 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 
 ```toml
 [dependencies]
-qubit-concurrent = "0.3.3"
+qubit-concurrent = "0.4.0"
 ```
 
 ## 快速开始

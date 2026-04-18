@@ -168,8 +168,7 @@ impl<T> Lock<T> for ArcStdMutex<T> {
     /// Attempts to acquire a read lock without blocking
     ///
     /// Attempts to immediately acquire the read lock. If the lock is
-    /// already held by another thread, returns `None`. This is a
-    /// non-blocking operation.
+    /// unavailable, returns a detailed error. This is a non-blocking operation.
     ///
     /// # Arguments
     ///
@@ -177,9 +176,9 @@ impl<T> Lock<T> for ArcStdMutex<T> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was successfully acquired and the
-    ///   closure executed
-    /// * `None` - If the lock is already held by another thread
+    /// * `Ok(R)` - If the lock was successfully acquired and the closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is already held by another thread
+    /// * `Err(TryLockError::Poisoned)` - If the lock is poisoned
     ///
     /// # Example
     ///
@@ -188,25 +187,14 @@ impl<T> Lock<T> for ArcStdMutex<T> {
     ///
     /// let counter = ArcStdMutex::new(42);
     ///
-    /// if let Some(value) = counter.try_read(|c| *c) {
+    /// if let Ok(value) = counter.try_read(|c| *c) {
     ///     println!("Current value: {}", value);
     /// } else {
-    ///     println!("Lock is busy");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
     #[inline]
-    fn try_read<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&T) -> R,
-    {
-        self.try_read_result(f).ok()
-    }
-
-    /// Attempts to acquire a read lock and preserves detailed failure reason
-    ///
-    /// This method distinguishes lock contention from poisoned lock state.
-    #[inline]
-    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_read<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&T) -> R,
     {
@@ -220,8 +208,7 @@ impl<T> Lock<T> for ArcStdMutex<T> {
     /// Attempts to acquire a write lock without blocking
     ///
     /// Attempts to immediately acquire the write lock. If the lock is
-    /// already held by another thread, returns `None`. This is a
-    /// non-blocking operation.
+    /// unavailable, returns a detailed error. This is a non-blocking operation.
     ///
     /// # Arguments
     ///
@@ -229,9 +216,9 @@ impl<T> Lock<T> for ArcStdMutex<T> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was successfully acquired and the
-    ///   closure executed
-    /// * `None` - If the lock is already held by another thread
+    /// * `Ok(R)` - If the lock was successfully acquired and the closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is already held by another thread
+    /// * `Err(TryLockError::Poisoned)` - If the lock is poisoned
     ///
     /// # Example
     ///
@@ -240,28 +227,17 @@ impl<T> Lock<T> for ArcStdMutex<T> {
     ///
     /// let counter = ArcStdMutex::new(0);
     ///
-    /// if let Some(result) = counter.try_write(|c| {
+    /// if let Ok(result) = counter.try_write(|c| {
     ///     *c += 1;
     ///     *c
     /// }) {
     ///     println!("New value: {}", result);
     /// } else {
-    ///     println!("Lock is busy");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
     #[inline]
-    fn try_write<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        self.try_write_result(f).ok()
-    }
-
-    /// Attempts to acquire a write lock and preserves detailed failure reason
-    ///
-    /// This method distinguishes lock contention from poisoned lock state.
-    #[inline]
-    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_write<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&mut T) -> R,
     {

@@ -548,4 +548,92 @@ mod tests {
             assert_eq!(call_count.load(Ordering::Acquire), 2);
         }
     }
+
+    mod test_execution_builder_logging_coverage {
+        use super::*;
+        use std::sync::atomic::AtomicUsize;
+
+        #[test]
+        fn test_execution_builder_write_first_check_logs_when_unmet() {
+            let data = ArcStdMutex::new(42);
+
+            let result = DoubleCheckedLock::on(&data)
+                .logger(log::Level::Info, "Condition not met at first check")
+                .when(|| false)
+                .call_mut(|value: &mut i32| {
+                    *value += 1;
+                    Ok::<i32, io::Error>(*value)
+                })
+                .get_result();
+
+            assert!(result.is_unmet());
+            assert_eq!(data.read(|v| *v), 42);
+        }
+
+        #[test]
+        fn test_execution_builder_read_second_check_logs_when_unmet() {
+            let data = ArcStdMutex::new(42);
+            let check_counter = Arc::new(AtomicUsize::new(0));
+
+            let result = DoubleCheckedLock::on(&data)
+                .logger(log::Level::Info, "Condition not met at second check (read)")
+                .when({
+                    let check_counter = Arc::clone(&check_counter);
+                    move || check_counter.fetch_add(1, Ordering::AcqRel) == 0
+                })
+                .call(|value: &i32| Ok::<i32, io::Error>(*value))
+                .get_result();
+
+            assert!(result.is_unmet());
+        }
+
+        #[test]
+        fn test_execution_builder_write_second_check_logs_when_unmet() {
+            let data = ArcStdMutex::new(42);
+            let check_counter = Arc::new(AtomicUsize::new(0));
+
+            let result = DoubleCheckedLock::on(&data)
+                .logger(log::Level::Info, "Condition not met at second check (write)")
+                .when({
+                    let check_counter = Arc::clone(&check_counter);
+                    move || check_counter.fetch_add(1, Ordering::AcqRel) == 0
+                })
+                .call_mut(|value: &mut i32| {
+                    *value += 1;
+                    Ok::<i32, io::Error>(*value)
+                })
+                .get_result();
+
+            assert!(result.is_unmet());
+            assert_eq!(data.read(|v| *v), 42);
+        }
+
+        #[test]
+        fn test_execution_builder_unmet_after_prepare_executes_rollback_path() {
+            let data = ArcStdMutex::new(42);
+            let check_counter = Arc::new(AtomicUsize::new(0));
+            let rollback_called = Arc::new(AtomicBool::new(false));
+
+            let rollback_called_clone = Arc::clone(&rollback_called);
+            let result = DoubleCheckedLock::on(&data)
+                .when({
+                    let check_counter = Arc::clone(&check_counter);
+                    move || check_counter.fetch_add(1, Ordering::AcqRel) == 0
+                })
+                .prepare(|| Ok::<(), io::Error>(()))
+                .call(|value: &i32| Ok::<i32, io::Error>(*value))
+                .rollback(move || {
+                    rollback_called_clone.store(true, Ordering::Release);
+                    Ok::<(), io::Error>(())
+                })
+                .get_result();
+
+            assert!(result.is_unmet());
+            assert!(
+                rollback_called.load(Ordering::Acquire),
+                "Rollback should run when condition becomes unmet after prepare"
+            );
+            assert_eq!(data.read(|v| *v), 42);
+        }
+    }
 }

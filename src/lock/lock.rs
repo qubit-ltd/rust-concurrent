@@ -25,8 +25,8 @@ use parking_lot::Mutex as ParkingLotMutex;
 
 /// Non-blocking lock acquisition error.
 ///
-/// This error type is used by `try_read_result` and `try_write_result` to
-/// distinguish lock contention from poisoned lock states.
+/// This error type is used by `try_read` and `try_write` to distinguish
+/// lock contention from poisoned lock states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TryLockError {
     /// The lock is currently held by another thread.
@@ -123,7 +123,7 @@ pub trait Lock<T: ?Sized> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{Lock, ArcRwLock};
     ///
     /// let lock = ArcRwLock::new(vec![1, 2, 3]);
@@ -176,7 +176,7 @@ pub trait Lock<T: ?Sized> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{Lock, ArcRwLock};
     ///
     /// let lock = ArcRwLock::new(vec![1, 2, 3]);
@@ -198,9 +198,8 @@ pub trait Lock<T: ?Sized> {
     /// Attempts to acquire a read lock without blocking
     ///
     /// This method tries to acquire a read lock immediately. If the lock
-    /// is currently held by another thread in write mode, it returns `None`
-    /// without blocking. Otherwise, it executes the closure and returns `Some`
-    /// containing the result.
+    /// cannot be acquired, it returns a detailed error. Otherwise, it executes
+    /// the closure and returns `Ok` containing the result.
     ///
     /// # Arguments
     ///
@@ -209,47 +208,31 @@ pub trait Lock<T: ?Sized> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was acquired and closure executed
-    /// * `None` - If the lock is currently held in write mode
+    /// * `Ok(R)` - If the lock was acquired and closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is currently held in write mode
+    /// * `Err(TryLockError::Poisoned)` - If the lock is poisoned
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{Lock, ArcRwLock};
     ///
     /// let lock = ArcRwLock::new(42);
-    /// if let Some(value) = lock.try_read(|data| *data) {
+    /// if let Ok(value) = lock.try_read(|data| *data) {
     ///     println!("Got value: {}", value);
     /// } else {
-    ///     println!("Lock is busy with write operation");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
-    fn try_read<R, F>(&self, f: F) -> Option<R>
+    fn try_read<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&T) -> R;
-
-    /// Attempts to acquire a read lock and returns a detailed error on failure.
-    ///
-    /// Compared to `try_read`, this method preserves the reason for failure:
-    /// contention (`WouldBlock`) or poisoned lock (`Poisoned`).
-    ///
-    /// The default implementation delegates to `try_read` and maps failure to
-    /// `WouldBlock`. Implementations with richer lock error information should
-    /// override this method.
-    #[inline]
-    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
-    where
-        F: FnOnce(&T) -> R,
-    {
-        self.try_read(f).ok_or(TryLockError::WouldBlock)
-    }
 
     /// Attempts to acquire a write lock without blocking
     ///
     /// This method tries to acquire a write lock immediately. If the lock
-    /// is currently held by another thread (in either read or write mode),
-    /// it returns `None` without blocking. Otherwise, it executes the closure
-    /// and returns `Some` containing the result.
+    /// cannot be acquired, it returns a detailed error. Otherwise, it executes
+    /// the closure and returns `Ok` containing the result.
     ///
     /// # Arguments
     ///
@@ -258,43 +241,28 @@ pub trait Lock<T: ?Sized> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was acquired and closure executed
-    /// * `None` - If the lock is currently held by another thread
+    /// * `Ok(R)` - If the lock was acquired and closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is currently held by another thread
+    /// * `Err(TryLockError::Poisoned)` - If the lock is poisoned
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{Lock, ArcMutex};
     ///
     /// let lock = ArcMutex::new(42);
-    /// if let Some(result) = lock.try_write(|data| {
+    /// if let Ok(result) = lock.try_write(|data| {
     ///     *data += 1;
     ///     *data
     /// }) {
     ///     println!("New value: {}", result);
     /// } else {
-    ///     println!("Lock is busy");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
-    fn try_write<R, F>(&self, f: F) -> Option<R>
+    fn try_write<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&mut T) -> R;
-
-    /// Attempts to acquire a write lock and returns a detailed error on failure.
-    ///
-    /// Compared to `try_write`, this method preserves the reason for failure:
-    /// contention (`WouldBlock`) or poisoned lock (`Poisoned`).
-    ///
-    /// The default implementation delegates to `try_write` and maps failure to
-    /// `WouldBlock`. Implementations with richer lock error information should
-    /// override this method.
-    #[inline]
-    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        self.try_write(f).ok_or(TryLockError::WouldBlock)
-    }
 }
 
 /// Synchronous mutex implementation of the Lock trait
@@ -330,15 +298,7 @@ impl<T: ?Sized> Lock<T> for Mutex<T> {
     }
 
     #[inline]
-    fn try_read<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&T) -> R,
-    {
-        self.try_read_result(f).ok()
-    }
-
-    #[inline]
-    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_read<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&T) -> R,
     {
@@ -350,15 +310,7 @@ impl<T: ?Sized> Lock<T> for Mutex<T> {
     }
 
     #[inline]
-    fn try_write<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        self.try_write_result(f).ok()
-    }
-
-    #[inline]
-    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_write<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&mut T) -> R,
     {
@@ -404,15 +356,7 @@ impl<T: ?Sized> Lock<T> for RwLock<T> {
     }
 
     #[inline]
-    fn try_read<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&T) -> R,
-    {
-        self.try_read_result(f).ok()
-    }
-
-    #[inline]
-    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_read<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&T) -> R,
     {
@@ -424,15 +368,7 @@ impl<T: ?Sized> Lock<T> for RwLock<T> {
     }
 
     #[inline]
-    fn try_write<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        self.try_write_result(f).ok()
-    }
-
-    #[inline]
-    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_write<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&mut T) -> R,
     {
@@ -486,15 +422,7 @@ impl<T: ?Sized> Lock<T> for ParkingLotMutex<T> {
     }
 
     #[inline]
-    fn try_read<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&T) -> R,
-    {
-        self.try_read_result(f).ok()
-    }
-
-    #[inline]
-    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_read<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&T) -> R,
     {
@@ -502,15 +430,7 @@ impl<T: ?Sized> Lock<T> for ParkingLotMutex<T> {
     }
 
     #[inline]
-    fn try_write<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        self.try_write_result(f).ok()
-    }
-
-    #[inline]
-    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_write<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&mut T) -> R,
     {

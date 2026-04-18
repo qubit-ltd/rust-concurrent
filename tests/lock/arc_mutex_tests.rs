@@ -21,6 +21,7 @@ use std::{
 use qubit_concurrent::{
     ArcMutex,
     Lock,
+    TryLockError,
 };
 
 #[cfg(test)]
@@ -77,7 +78,7 @@ mod arc_mutex_tests {
     }
 
     #[test]
-    fn test_arc_mutex_try_with_lock_returns_none() {
+    fn test_arc_mutex_try_with_lock_returns_would_block() {
         let mutex = Arc::new(ArcMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -98,23 +99,20 @@ mod arc_mutex_tests {
         // Wait for child thread to acquire the lock
         barrier.wait();
 
-        // Try to acquire lock, should return None
+        // Try to acquire lock, should return WouldBlock
         let result = mutex.try_read(|value| *value);
-        assert!(
-            result.is_none(),
-            "Expected None when lock is held by another thread"
-        );
+        assert_eq!(result, Err(TryLockError::WouldBlock));
 
         // Wait for child thread to complete
         handle.join().unwrap();
 
         // Now should be able to successfully acquire the lock
         let result = mutex.try_read(|value| *value);
-        assert_eq!(result, Some(1));
+        assert_eq!(result, Ok(1));
     }
 
     #[test]
-    fn test_arc_mutex_try_write_with_lock_returns_none() {
+    fn test_arc_mutex_try_write_with_lock_returns_would_block() {
         let mutex = Arc::new(ArcMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -135,15 +133,12 @@ mod arc_mutex_tests {
         // Wait for child thread to acquire the lock
         barrier.wait();
 
-        // Try to acquire write lock, should return None
+        // Try to acquire write lock, should return WouldBlock
         let result = mutex.try_write(|value| {
             *value += 1;
             *value
         });
-        assert!(
-            result.is_none(),
-            "Expected None when lock is held by another thread"
-        );
+        assert_eq!(result, Err(TryLockError::WouldBlock));
 
         // Wait for child thread to complete
         handle.join().unwrap();
@@ -153,7 +148,7 @@ mod arc_mutex_tests {
             *value += 1;
             *value
         });
-        assert_eq!(result, Some(2));
+        assert_eq!(result, Ok(2));
     }
 
     #[test]
@@ -297,18 +292,18 @@ mod arc_mutex_tests {
 
         // Try read should work
         let result = mutex.try_read(|v| *v);
-        assert_eq!(result, Some(0));
+        assert_eq!(result, Ok(0));
 
         // Try write should work
         let result = mutex.try_write(|v| {
             *v = 42;
             *v
         });
-        assert_eq!(result, Some(42));
+        assert_eq!(result, Ok(42));
 
         // Verify the change
         let result = mutex.try_read(|v| *v);
-        assert_eq!(result, Some(42));
+        assert_eq!(result, Ok(42));
     }
 
     #[test]

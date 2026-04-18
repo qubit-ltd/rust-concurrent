@@ -20,7 +20,10 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::lock::Lock;
+use crate::lock::{
+    Lock,
+    TryLockError,
+};
 
 /// Synchronous Mutex Wrapper (Parking Lot)
 ///
@@ -42,7 +45,7 @@ use crate::lock::Lock;
 ///
 /// # Usage Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// use qubit_concurrent::lock::{ArcMutex, Lock};
 /// use std::sync::Arc;
 ///
@@ -82,7 +85,7 @@ impl<T> ArcMutex<T> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::ArcMutex;
     ///
     /// let lock = ArcMutex::new(42);
@@ -112,7 +115,7 @@ impl<T> Lock<T> for ArcMutex<T> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcMutex, Lock};
     ///
     /// let counter = ArcMutex::new(42);
@@ -145,7 +148,7 @@ impl<T> Lock<T> for ArcMutex<T> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcMutex, Lock};
     ///
     /// let counter = ArcMutex::new(0);
@@ -169,8 +172,7 @@ impl<T> Lock<T> for ArcMutex<T> {
     /// Attempts to acquire a read lock without blocking
     ///
     /// Attempts to immediately acquire the read lock. If the lock is
-    /// already held by another thread, returns `None`. This is a
-    /// non-blocking operation.
+    /// unavailable, returns a detailed error. This is a non-blocking operation.
     ///
     /// # Arguments
     ///
@@ -178,36 +180,34 @@ impl<T> Lock<T> for ArcMutex<T> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was successfully acquired and the
-    ///   closure executed
-    /// * `None` - If the lock is already held by another thread
+    /// * `Ok(R)` - If the lock was successfully acquired and the closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is already held by another thread
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcMutex, Lock};
     ///
     /// let counter = ArcMutex::new(42);
     ///
-    /// if let Some(value) = counter.try_read(|c| *c) {
+    /// if let Ok(value) = counter.try_read(|c| *c) {
     ///     println!("Current value: {}", value);
     /// } else {
-    ///     println!("Lock is busy");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
     #[inline]
-    fn try_read<R, F>(&self, f: F) -> Option<R>
+    fn try_read<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&T) -> R,
     {
-        self.inner.try_lock().map(|guard| f(&*guard))
+        self.inner.try_lock().map(|guard| f(&*guard)).ok_or(TryLockError::WouldBlock)
     }
 
     /// Attempts to acquire a write lock without blocking
     ///
     /// Attempts to immediately acquire the write lock. If the lock is
-    /// already held by another thread, returns `None`. This is a
-    /// non-blocking operation.
+    /// unavailable, returns a detailed error. This is a non-blocking operation.
     ///
     /// # Arguments
     ///
@@ -215,32 +215,31 @@ impl<T> Lock<T> for ArcMutex<T> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was successfully acquired and the
-    ///   closure executed
-    /// * `None` - If the lock is already held by another thread
+    /// * `Ok(R)` - If the lock was successfully acquired and the closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is already held by another thread
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcMutex, Lock};
     ///
     /// let counter = ArcMutex::new(0);
     ///
-    /// if let Some(result) = counter.try_write(|c| {
+    /// if let Ok(result) = counter.try_write(|c| {
     ///     *c += 1;
     ///     *c
     /// }) {
     ///     println!("New value: {}", result);
     /// } else {
-    ///     println!("Lock is busy");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
     #[inline]
-    fn try_write<R, F>(&self, f: F) -> Option<R>
+    fn try_write<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&mut T) -> R,
     {
-        self.inner.try_lock().map(|mut guard| f(&mut *guard))
+        self.inner.try_lock().map(|mut guard| f(&mut *guard)).ok_or(TryLockError::WouldBlock)
     }
 }
 

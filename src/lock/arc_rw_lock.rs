@@ -43,7 +43,7 @@ use crate::lock::{Lock, TryLockError};
 ///
 /// # Usage Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// use qubit_concurrent::lock::{ArcRwLock, Lock};
 ///
 /// let data = ArcRwLock::new(String::from("Hello"));
@@ -81,7 +81,7 @@ impl<T> ArcRwLock<T> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::ArcRwLock;
     ///
     /// let rw_lock = ArcRwLock::new(vec![1, 2, 3]);
@@ -113,7 +113,7 @@ impl<T> Lock<T> for ArcRwLock<T> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcRwLock, Lock};
     ///
     /// let data = ArcRwLock::new(vec![1, 2, 3]);
@@ -148,7 +148,7 @@ impl<T> Lock<T> for ArcRwLock<T> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcRwLock, Lock};
     ///
     /// let data = ArcRwLock::new(vec![1, 2, 3]);
@@ -170,8 +170,7 @@ impl<T> Lock<T> for ArcRwLock<T> {
     /// Attempts to acquire a read lock without blocking
     ///
     /// Attempts to immediately acquire the read lock. If the lock is
-    /// currently held by another thread in write mode, returns `None`
-    /// without blocking. This is a non-blocking operation.
+    /// unavailable, returns a detailed error. This is a non-blocking operation.
     ///
     /// # Arguments
     ///
@@ -179,36 +178,25 @@ impl<T> Lock<T> for ArcRwLock<T> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was successfully acquired and the
-    ///   closure executed
-    /// * `None` - If the lock is currently held in write mode
+    /// * `Ok(R)` - If the lock was successfully acquired and the closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is currently held in write mode
+    /// * `Err(TryLockError::Poisoned)` - If the lock is poisoned
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcRwLock, Lock};
     ///
     /// let data = ArcRwLock::new(vec![1, 2, 3]);
     ///
-    /// if let Some(length) = data.try_read(|v| v.len()) {
+    /// if let Ok(length) = data.try_read(|v| v.len()) {
     ///     println!("Vector length: {}", length);
     /// } else {
-    ///     println!("Lock is busy with write operation");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
     #[inline]
-    fn try_read<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&T) -> R,
-    {
-        self.try_read_result(f).ok()
-    }
-
-    /// Attempts to acquire a read lock and preserves detailed failure reason
-    ///
-    /// This method distinguishes lock contention from poisoned lock state.
-    #[inline]
-    fn try_read_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_read<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&T) -> R,
     {
@@ -222,8 +210,7 @@ impl<T> Lock<T> for ArcRwLock<T> {
     /// Attempts to acquire a write lock without blocking
     ///
     /// Attempts to immediately acquire the write lock. If the lock is
-    /// currently held by another thread (in either read or write mode),
-    /// returns `None` without blocking. This is a non-blocking operation.
+    /// unavailable, returns a detailed error. This is a non-blocking operation.
     ///
     /// # Arguments
     ///
@@ -231,39 +218,28 @@ impl<T> Lock<T> for ArcRwLock<T> {
     ///
     /// # Returns
     ///
-    /// * `Some(R)` - If the lock was successfully acquired and the
-    ///   closure executed
-    /// * `None` - If the lock is currently held by another thread
+    /// * `Ok(R)` - If the lock was successfully acquired and the closure executed
+    /// * `Err(TryLockError::WouldBlock)` - If the lock is currently held by another thread
+    /// * `Err(TryLockError::Poisoned)` - If the lock is poisoned
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// use qubit_concurrent::lock::{ArcRwLock, Lock};
     ///
     /// let data = ArcRwLock::new(vec![1, 2, 3]);
     ///
-    /// if let Some(new_length) = data.try_write(|v| {
+    /// if let Ok(new_length) = data.try_write(|v| {
     ///     v.push(4);
     ///     v.len()
     /// }) {
     ///     println!("New length: {}", new_length);
     /// } else {
-    ///     println!("Lock is busy");
+    ///     println!("Lock is unavailable");
     /// }
     /// ```
     #[inline]
-    fn try_write<R, F>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        self.try_write_result(f).ok()
-    }
-
-    /// Attempts to acquire a write lock and preserves detailed failure reason
-    ///
-    /// This method distinguishes lock contention from poisoned lock state.
-    #[inline]
-    fn try_write_result<R, F>(&self, f: F) -> Result<R, TryLockError>
+    fn try_write<R, F>(&self, f: F) -> Result<R, TryLockError>
     where
         F: FnOnce(&mut T) -> R,
     {

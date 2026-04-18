@@ -373,4 +373,62 @@ mod arc_async_rw_lock_tests {
 
         assert_eq!(result, Ok(20));
     }
+
+    #[tokio::test]
+    async fn test_arc_async_rw_lock_try_read_returns_none_when_write_locked() {
+        let async_rw_lock = Arc::new(ArcAsyncRwLock::new(0));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+
+        let lock_clone = async_rw_lock.clone();
+        let barrier_clone = barrier.clone();
+        let handle = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                lock_clone
+                    .write(|_| {
+                        barrier_clone.wait();
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    })
+                    .await;
+            });
+        });
+
+        barrier.wait();
+        let result = async_rw_lock.try_read(|value| *value);
+        assert!(
+            result.is_none(),
+            "Expected None when write lock is held by another thread"
+        );
+
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_arc_async_rw_lock_try_write_returns_none_when_read_locked() {
+        let async_rw_lock = Arc::new(ArcAsyncRwLock::new(0));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+
+        let lock_clone = async_rw_lock.clone();
+        let barrier_clone = barrier.clone();
+        let handle = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                lock_clone
+                    .read(|_| {
+                        barrier_clone.wait();
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    })
+                    .await;
+            });
+        });
+
+        barrier.wait();
+        let result = async_rw_lock.try_write(|value| *value);
+        assert!(
+            result.is_none(),
+            "Expected None when read lock is held by another thread"
+        );
+
+        handle.join().unwrap();
+    }
 }

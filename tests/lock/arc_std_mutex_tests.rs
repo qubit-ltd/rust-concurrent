@@ -131,7 +131,7 @@ mod arc_std_mutex_tests {
     }
 
     #[test]
-    fn test_arc_mutex_try_with_lock_returns_none() {
+    fn test_arc_mutex_try_with_lock_returns_would_block() {
         let mutex = Arc::new(ArcStdMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -152,19 +152,16 @@ mod arc_std_mutex_tests {
         // Wait for child thread to acquire the lock
         barrier.wait();
 
-        // Try to acquire lock, should return None
+        // Try to acquire lock, should return WouldBlock
         let result = mutex.try_read(|value| *value);
-        assert!(
-            result.is_none(),
-            "Expected None when lock is held by another thread"
-        );
+        assert_eq!(result, Err(TryLockError::WouldBlock));
 
         // Wait for child thread to complete
         handle.join().unwrap();
 
         // Now should be able to successfully acquire the lock
         let result = mutex.try_read(|value| *value);
-        assert_eq!(result, Some(1));
+        assert_eq!(result, Ok(1));
     }
 
     #[test]
@@ -192,17 +189,13 @@ mod arc_std_mutex_tests {
         // Wait for child thread to complete panicking (will poison the lock)
         let _ = handle.join();
 
-        // Try to acquire poisoned lock, should return None
+        // Try to acquire poisoned lock, should return Poisoned
         let result = mutex.try_read(|value| *value);
-        assert!(
-            result.is_none(),
-            "Expected None for poisoned lock, got {:?}",
-            result
-        );
+        assert_eq!(result, Err(TryLockError::Poisoned));
     }
 
     #[test]
-    fn test_arc_mutex_try_read_result_returns_would_block() {
+    fn test_arc_mutex_try_read_returns_would_block() {
         let mutex = Arc::new(ArcStdMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -218,14 +211,14 @@ mod arc_std_mutex_tests {
         });
 
         barrier.wait();
-        let result = mutex.try_read_result(|value| *value);
+        let result = mutex.try_read(|value| *value);
         assert_eq!(result, Err(TryLockError::WouldBlock));
 
         handle.join().unwrap();
     }
 
     #[test]
-    fn test_arc_mutex_try_read_result_returns_poisoned() {
+    fn test_arc_mutex_try_read_returns_poisoned() {
         let mutex = Arc::new(ArcStdMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -243,7 +236,30 @@ mod arc_std_mutex_tests {
         barrier.wait();
         let _ = handle.join();
 
-        let result = mutex.try_read_result(|value| *value);
+        let result = mutex.try_read(|value| *value);
+        assert_eq!(result, Err(TryLockError::Poisoned));
+    }
+
+    #[test]
+    fn test_arc_mutex_try_write_returns_poisoned() {
+        let mutex = Arc::new(ArcStdMutex::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+
+        let handle = thread::spawn(move || {
+            mutex_clone.write(|value| {
+                *value += 1;
+                barrier_clone.wait();
+                panic!("intentional panic to poison the lock");
+            });
+        });
+
+        barrier.wait();
+        let _ = handle.join();
+
+        let result = mutex.try_write(|value| *value);
         assert_eq!(result, Err(TryLockError::Poisoned));
     }
 
@@ -396,7 +412,7 @@ mod arc_std_mutex_tests {
     }
 
     #[test]
-    fn test_arc_mutex_try_write_returns_none() {
+    fn test_arc_mutex_try_write_returns_would_block() {
         let mutex = Arc::new(ArcStdMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -417,19 +433,16 @@ mod arc_std_mutex_tests {
         // Wait for child thread to acquire the lock
         barrier.wait();
 
-        // Try to acquire write lock, should return None
+        // Try to acquire write lock, should return WouldBlock
         let result = mutex.try_write(|value| *value);
-        assert!(
-            result.is_none(),
-            "Expected None when lock is held by another thread"
-        );
+        assert_eq!(result, Err(TryLockError::WouldBlock));
 
         // Wait for child thread to complete
         handle.join().unwrap();
 
         // Now should be able to successfully acquire the lock
         let result = mutex.try_write(|value| *value);
-        assert_eq!(result, Some(1));
+        assert_eq!(result, Ok(1));
     }
 
     #[test]
@@ -443,10 +456,10 @@ mod arc_std_mutex_tests {
         assert_eq!(result, "write_result");
 
         let result = mutex.try_read(|_| "try_read_result");
-        assert_eq!(result, Some("try_read_result"));
+        assert_eq!(result, Ok("try_read_result"));
 
         let result = mutex.try_write(|_| "try_write_result");
-        assert_eq!(result, Some("try_write_result"));
+        assert_eq!(result, Ok("try_write_result"));
     }
 
     #[test]
@@ -469,7 +482,7 @@ mod arc_std_mutex_tests {
         let mutex = ArcStdMutex::new(Ok::<i32, &str>(42));
 
         let result = mutex.write(|res| match res {
-            Ok(ref mut val) => {
+            Ok(val) => {
                 *val *= 2;
                 Ok(*val)
             }
@@ -511,17 +524,17 @@ mod arc_std_mutex_tests {
 
         // Test successful try_read
         let result = mutex.try_read(|val| *val);
-        assert_eq!(result, Some(42));
+        assert_eq!(result, Ok(42));
 
         // Test successful try_write
         let result = mutex.try_write(|val| {
             *val += 1;
             *val
         });
-        assert_eq!(result, Some(43));
+        assert_eq!(result, Ok(43));
 
         // Verify the change
         let result = mutex.try_read(|val| *val);
-        assert_eq!(result, Some(43));
+        assert_eq!(result, Ok(43));
     }
 }

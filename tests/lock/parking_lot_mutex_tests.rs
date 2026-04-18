@@ -19,7 +19,10 @@ use std::{
 };
 
 use parking_lot::Mutex as ParkingLotMutex;
-use qubit_concurrent::lock::Lock;
+use qubit_concurrent::lock::{
+    Lock,
+    TryLockError,
+};
 
 #[cfg(test)]
 #[allow(clippy::module_inception)]
@@ -75,7 +78,7 @@ mod parking_lot_mutex_tests {
     fn test_parking_lot_mutex_try_read_success() {
         let mutex = ParkingLotMutex::new(42);
         let result = Lock::try_read(&mutex, |value| *value);
-        assert_eq!(result, Some(42));
+        assert_eq!(result, Ok(42));
     }
 
     #[test]
@@ -85,11 +88,11 @@ mod parking_lot_mutex_tests {
             *value += 1;
             *value
         });
-        assert_eq!(result, Some(43));
+        assert_eq!(result, Ok(43));
     }
 
     #[test]
-    fn test_parking_lot_mutex_try_read_returns_none_when_locked() {
+    fn test_parking_lot_mutex_try_read_returns_would_block_when_locked() {
         let mutex = Arc::new(ParkingLotMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -110,23 +113,20 @@ mod parking_lot_mutex_tests {
         // Wait for child thread to acquire the lock
         barrier.wait();
 
-        // Try to acquire lock, should return None
+        // Try to acquire lock, should return WouldBlock
         let result = Lock::try_read(&*mutex, |value| *value);
-        assert!(
-            result.is_none(),
-            "Expected None when lock is held by another thread"
-        );
+        assert_eq!(result, Err(TryLockError::WouldBlock));
 
         // Wait for child thread to complete
         handle.join().unwrap();
 
         // Now should be able to successfully acquire the lock
         let result = Lock::try_read(&*mutex, |value| *value);
-        assert_eq!(result, Some(1));
+        assert_eq!(result, Ok(1));
     }
 
     #[test]
-    fn test_parking_lot_mutex_try_write_returns_none_when_locked() {
+    fn test_parking_lot_mutex_try_write_returns_would_block_when_locked() {
         let mutex = Arc::new(ParkingLotMutex::new(0));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -147,12 +147,9 @@ mod parking_lot_mutex_tests {
         // Wait for child thread to acquire the lock
         barrier.wait();
 
-        // Try to acquire write lock, should return None
+        // Try to acquire write lock, should return WouldBlock
         let result = Lock::try_write(&*mutex, |value| *value);
-        assert!(
-            result.is_none(),
-            "Expected None when lock is held by another thread"
-        );
+        assert_eq!(result, Err(TryLockError::WouldBlock));
 
         // Wait for child thread to complete
         handle.join().unwrap();
@@ -162,7 +159,7 @@ mod parking_lot_mutex_tests {
             *value += 1;
             *value
         });
-        assert_eq!(result, Some(2));
+        assert_eq!(result, Ok(2));
     }
 
     #[test]

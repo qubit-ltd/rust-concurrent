@@ -319,6 +319,28 @@ mod async_lock_trait_tests {
         let result = AsyncLock::try_write(&mutex, |value| *value);
         assert_eq!(result, Some(0)); // Should succeed again since lock was released
     }
+
+    #[tokio::test]
+    async fn test_tokio_async_mutex_try_read_returns_none_when_locked() {
+        let mutex = AsyncMutex::new(0);
+        let _guard = mutex
+            .try_lock()
+            .expect("failed to acquire initial mutex guard");
+
+        let result = AsyncLock::try_read(&mutex, |value| *value);
+        assert!(result.is_none(), "Expected None when mutex is already locked");
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_mutex_try_write_returns_none_when_guard_held() {
+        let mutex = AsyncMutex::new(0);
+        let _guard = mutex
+            .try_lock()
+            .expect("failed to acquire initial mutex guard");
+
+        let result = AsyncLock::try_write(&mutex, |value| *value);
+        assert!(result.is_none(), "Expected None when mutex is already locked");
+    }
 }
 
 #[cfg(test)]
@@ -606,5 +628,33 @@ mod async_rwlock_trait_tests {
         // Now try to acquire write lock while read lock was held (but now released)
         let result = AsyncLock::try_write(&rwlock, |value| *value);
         assert_eq!(result, Some(0)); // Should succeed since lock was released
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_try_read_returns_none_when_write_guard_held() {
+        let rwlock = AsyncRwLock::new(0);
+        let _guard = rwlock
+            .try_write()
+            .expect("failed to acquire initial write guard");
+
+        let result = AsyncLock::try_read(&rwlock, |value| *value);
+        assert!(
+            result.is_none(),
+            "Expected None when rwlock write guard is already held"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_try_write_returns_none_when_read_guard_held() {
+        let rwlock = AsyncRwLock::new(0);
+        let _guard = rwlock
+            .try_read()
+            .expect("failed to acquire initial read guard");
+
+        let result = AsyncLock::try_write(&rwlock, |value| *value);
+        assert!(
+            result.is_none(),
+            "Expected None when rwlock read guard is already held"
+        );
     }
 }

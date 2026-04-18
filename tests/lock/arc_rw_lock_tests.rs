@@ -275,7 +275,7 @@ mod arc_rw_lock_tests {
     }
 
     #[test]
-    fn test_arc_rw_lock_try_read_result_returns_poisoned() {
+    fn test_arc_rw_lock_try_read_returns_poisoned() {
         let rw_lock = ArcRwLock::new(0);
         let rw_lock = Arc::new(rw_lock);
 
@@ -288,12 +288,12 @@ mod arc_rw_lock_tests {
         });
 
         let _ = handle.join();
-        let result = rw_lock.try_read_result(|value| *value);
+        let result = rw_lock.try_read(|value| *value);
         assert_eq!(result, Err(TryLockError::Poisoned));
     }
 
     #[test]
-    fn test_arc_rw_lock_try_write_result_returns_would_block() {
+    fn test_arc_rw_lock_try_write_returns_would_block() {
         let rw_lock = Arc::new(ArcRwLock::new(0));
         let barrier = Arc::new(std::sync::Barrier::new(2));
 
@@ -307,10 +307,48 @@ mod arc_rw_lock_tests {
         });
 
         barrier.wait();
-        let result = rw_lock.try_write_result(|value| *value);
+        let result = rw_lock.try_write(|value| *value);
         assert_eq!(result, Err(TryLockError::WouldBlock));
 
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_arc_rw_lock_try_read_returns_would_block() {
+        let rw_lock = Arc::new(ArcRwLock::new(0));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+
+        let rw_lock_clone = rw_lock.clone();
+        let barrier_clone = barrier.clone();
+        let handle = thread::spawn(move || {
+            rw_lock_clone.write(|_| {
+                barrier_clone.wait();
+                thread::sleep(std::time::Duration::from_millis(100));
+            });
+        });
+
+        barrier.wait();
+        let result = rw_lock.try_read(|value| *value);
+        assert_eq!(result, Err(TryLockError::WouldBlock));
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_arc_rw_lock_try_write_returns_poisoned() {
+        let rw_lock = Arc::new(ArcRwLock::new(0));
+
+        let rw_lock_clone = rw_lock.clone();
+        let handle = thread::spawn(move || {
+            rw_lock_clone.write(|value| {
+                *value += 1;
+                panic!("intentional panic to poison the lock");
+            });
+        });
+
+        let _ = handle.join();
+        let result = rw_lock.try_write(|value| *value);
+        assert_eq!(result, Err(TryLockError::Poisoned));
     }
 
     #[test]

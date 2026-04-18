@@ -318,7 +318,7 @@ mod arc_async_mutex_tests {
     }
 
     #[tokio::test]
-    async fn test_arc_async_mutex_try_write_with_lock_returns_none() {
+    async fn test_arc_async_mutex_try_write_with_lock_returns_some() {
         let async_mutex = ArcAsyncMutex::new(0);
 
         // For async mutex, try_write will succeed when the lock is not held

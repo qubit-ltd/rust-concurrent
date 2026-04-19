@@ -20,21 +20,19 @@ use super::Executor;
 /// Executes each task on a dedicated OS thread.
 ///
 /// This executor does not manage lifecycle or maintain a queue. Each accepted
-/// task receives a blocking [`TaskHandle`] that can be used to wait for the
-/// result.
+/// task receives a [`TaskHandle`] that can be used to wait for the result.
 ///
 /// # Semantics
 ///
 /// * **One task, one thread** — each [`Executor::call`] or [`Executor::execute`]
 ///   spawns a new [`std::thread::spawn`] worker. There is no pool and no
 ///   submission queue.
-/// * **Blocking wait** — [`TaskHandle::get`] performs a blocking
-///   [`std::sync::mpsc::Receiver::recv`] on the calling thread. Do not call it
-///   from a Tokio async worker thread unless you offload with
-///   [`tokio::task::spawn_blocking`] or similar.
+/// * **Blocking or async wait** — [`TaskHandle::get`] blocks the calling thread,
+///   while awaiting the handle uses a waker and does not block the polling
+///   thread.
 /// * **Completion probe** — [`TaskHandle::is_done`] reads an atomic flag set
-///   after the worker sends the result; it does not retrieve the value (you
-///   still need [`TaskHandle::get`] for that).
+///   after the worker publishes the result; it does not retrieve the value
+///   (you still need [`TaskHandle::get`] for that).
 ///
 /// # Examples
 ///
@@ -70,11 +68,11 @@ impl Executor for ThreadPerTaskExecutor {
         R: Send + 'static,
         E: Send + 'static,
     {
-        let (handle, sender, done) = TaskHandle::channel();
+        let (handle, completion) = TaskHandle::completion_pair();
         thread::spawn(move || {
-            let result = run_callable(task);
-            let _ = sender.send(result);
-            done.store(true);
+            if completion.start() {
+                completion.complete(run_callable(task));
+            }
         });
         handle
     }

@@ -10,3 +10,4 @@
 
 mod executor;
 mod service;
+mod task_handle_tests;

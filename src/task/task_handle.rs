@@ -6,12 +6,19 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-use std::sync::{
-    Arc,
-    mpsc::{
-        self,
-        Receiver,
-        Sender,
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{
+        Arc,
+        Condvar,
+        Mutex,
+        MutexGuard,
+    },
+    task::{
+        Context,
+        Poll,
+        Waker,
     },
 };
 
@@ -22,11 +29,11 @@ use super::{
     TaskResult,
 };
 
-/// Blocking handle for a task running outside the caller's current stack.
+/// Handle for a task running outside the caller's current stack.
 ///
 /// `TaskHandle` is returned by thread-backed executors and services. Calling
-/// [`Self::get`] waits until the accepted task completes and then reports the
-/// final task result.
+/// [`Self::get`] blocks the current thread until the accepted task completes.
+/// Awaiting the handle waits asynchronously for the same final task result.
 ///
 /// # Type Parameters
 ///
@@ -37,31 +44,49 @@ use super::{
 ///
 /// Haixing Hu
 pub struct TaskHandle<R, E> {
-    receiver: Receiver<TaskResult<R, E>>,
-    done: Arc<AtomicBool>,
+    inner: Arc<TaskHandleInner<R, E>>,
+}
+
+/// Shared state used by a task handle and its completing runner.
+struct TaskHandleInner<R, E> {
+    state: Mutex<TaskHandleState<R, E>>,
+    completed: Condvar,
+    done: AtomicBool,
+}
+
+/// Mutable completion state protected by the task handle mutex.
+struct TaskHandleState<R, E> {
+    result: Option<TaskResult<R, E>>,
+    started: bool,
+    waker: Option<Waker>,
 }
 
 impl<R, E> TaskHandle<R, E> {
-    /// Creates a handle and the completion pieces used by a task runner.
+    /// Creates a handle and completion endpoint used by a task runner.
     ///
     /// # Returns
     ///
-    /// A handle for the caller, a sender for the runner, and a completion flag
-    /// that the runner must set after sending or dropping the result.
-    pub(crate) fn channel() -> (Self, Sender<TaskResult<R, E>>, Arc<AtomicBool>) {
-        let (sender, receiver) = mpsc::channel();
-        let done = Arc::new(AtomicBool::new(false));
-        (
-            Self {
-                receiver,
-                done: Arc::clone(&done),
-            },
-            sender,
-            done,
-        )
+    /// A handle for the caller and a completion endpoint for the runner.
+    pub(crate) fn completion_pair() -> (Self, TaskCompletion<R, E>) {
+        let inner = Arc::new(TaskHandleInner {
+            state: Mutex::new(TaskHandleState {
+                result: None,
+                started: false,
+                waker: None,
+            }),
+            completed: Condvar::new(),
+            done: AtomicBool::new(false),
+        });
+        let handle = Self {
+            inner: Arc::clone(&inner),
+        };
+        let completion = TaskCompletion { inner };
+        (handle, completion)
     }
 
     /// Waits for the task to finish and returns its final result.
+    ///
+    /// This method blocks the current thread until a result is available.
     ///
     /// # Returns
     ///
@@ -69,9 +94,17 @@ impl<R, E> TaskHandle<R, E> {
     /// panics, or is cancelled before producing a value, the corresponding
     /// [`TaskExecutionError`] is returned.
     pub fn get(self) -> TaskResult<R, E> {
-        self.receiver
-            .recv()
-            .unwrap_or(Err(TaskExecutionError::Cancelled))
+        let mut state = self.inner.lock_state();
+        loop {
+            if let Some(result) = state.result.take() {
+                return result;
+            }
+            state = self
+                .inner
+                .completed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
     }
 
     /// Returns whether the task has reported completion.
@@ -81,19 +114,116 @@ impl<R, E> TaskHandle<R, E> {
     /// `true` after the task runner has produced or abandoned its final result.
     #[inline]
     pub fn is_done(&self) -> bool {
-        self.done.load()
+        self.inner.done.load()
     }
 
     /// Attempts to cancel the task.
     ///
-    /// Thread-backed handles cannot forcefully cancel an already running OS
-    /// thread, so this method currently returns `false`.
+    /// Cancellation can only win before the runner marks the task as started.
+    /// It cannot interrupt a task that is already running on an OS thread.
     ///
     /// # Returns
     ///
-    /// Always `false` for this handle type.
+    /// `true` if the task was cancelled before it started, or `false` if the
+    /// task was already running or completed.
     #[inline]
-    pub const fn cancel(&self) -> bool {
-        false
+    pub fn cancel(&self) -> bool {
+        TaskCompletion {
+            inner: Arc::clone(&self.inner),
+        }
+        .cancel()
+    }
+}
+
+impl<R, E> Future for TaskHandle<R, E> {
+    type Output = TaskResult<R, E>;
+
+    /// Polls this handle for the accepted task's final result.
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut state = self.inner.lock_state();
+        if let Some(result) = state.result.take() {
+            Poll::Ready(result)
+        } else {
+            state.waker = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
+
+impl<R, E> TaskHandleInner<R, E> {
+    /// Acquires the shared completion state while tolerating poisoned locks.
+    fn lock_state(&self) -> MutexGuard<'_, TaskHandleState<R, E>> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// Completion endpoint owned by the task runner.
+pub(crate) struct TaskCompletion<R, E> {
+    inner: Arc<TaskHandleInner<R, E>>,
+}
+
+impl<R, E> Clone for TaskCompletion<R, E> {
+    /// Clones the completion endpoint for mutually exclusive finish paths.
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
+impl<R, E> TaskCompletion<R, E> {
+    /// Marks the task as started if it was not cancelled first.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the runner should execute the task, or `false` if the task was
+    /// already completed through cancellation.
+    pub(crate) fn start(&self) -> bool {
+        let mut state = self.inner.lock_state();
+        if state.result.is_some() {
+            false
+        } else {
+            state.started = true;
+            true
+        }
+    }
+
+    /// Completes the task with its final result.
+    ///
+    /// If another path has already completed the task, this result is ignored.
+    pub(crate) fn complete(&self, result: TaskResult<R, E>) {
+        self.finish(result, |_| true);
+    }
+
+    /// Cancels the task if it has not started yet.
+    ///
+    /// # Returns
+    ///
+    /// `true` if this call published a cancellation result, or `false` if the
+    /// task was already started or completed.
+    pub(crate) fn cancel(&self) -> bool {
+        self.finish(Err(TaskExecutionError::Cancelled), |state| !state.started)
+    }
+
+    /// Publishes a terminal result when the supplied predicate allows it.
+    fn finish<F>(&self, result: TaskResult<R, E>, can_finish: F) -> bool
+    where
+        F: FnOnce(&TaskHandleState<R, E>) -> bool,
+    {
+        let mut state = self.inner.lock_state();
+        if state.result.is_some() || !can_finish(&state) {
+            return false;
+        }
+        state.result = Some(result);
+        self.inner.done.store(true);
+        let waker = state.waker.take();
+        drop(state);
+        self.inner.completed.notify_all();
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+        true
     }
 }

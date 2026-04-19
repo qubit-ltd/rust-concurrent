@@ -127,12 +127,12 @@ impl ExecutorService for ThreadPerTaskExecutorService {
         self.state.active_tasks.inc();
         drop(submission_guard);
 
-        let (handle, sender, done) = TaskHandle::channel();
+        let (handle, completion) = TaskHandle::completion_pair();
         let state = Arc::clone(&self.state);
         thread::spawn(move || {
-            let result = run_callable(task);
-            let _ = sender.send(result);
-            done.store(true);
+            if completion.start() {
+                completion.complete(run_callable(task));
+            }
             if state.active_tasks.dec() == 0 {
                 state.notify_if_terminated();
             }

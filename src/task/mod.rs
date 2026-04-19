@@ -21,12 +21,6 @@ mod task_execution_error;
 mod task_handle;
 mod task_runner;
 
-pub use qubit_function::{
-    BoxCallable,
-    BoxRunnable,
-    Callable,
-    Runnable,
-};
 pub use task_execution_error::{
     TaskExecutionError,
     TaskResult,

@@ -19,15 +19,15 @@ use std::{
     },
 };
 
-use qubit_concurrent::task::{
+use qubit_concurrent::task::executor::{
+    DirectExecutor,
+    Executor,
+};
+use qubit_function::{
     BoxCallable,
     BoxRunnable,
     Callable,
     Runnable,
-    executor::{
-        DirectExecutor,
-        Executor,
-    },
 };
 
 #[test]
@@ -57,15 +57,15 @@ fn test_direct_executor_call_returns_value() {
 }
 
 #[test]
-fn test_task_module_reexports_function_task_types() {
+fn test_qubit_function_task_types_remain_compatible() {
     let runnable: BoxRunnable<io::Error> = Runnable::into_box(|| Ok::<(), io::Error>(()));
-    runnable.run().expect("re-exported runnable should run");
+    runnable.run().expect("boxed runnable should run");
 
     let callable: BoxCallable<i32, io::Error> = Callable::into_box(|| Ok::<i32, io::Error>(42));
     assert_eq!(
         callable
             .call()
-            .expect("re-exported callable should return a value"),
+            .expect("boxed callable should return a value"),
         42,
     );
 }

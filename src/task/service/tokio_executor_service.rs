@@ -91,8 +91,8 @@ impl Drop for TokioServiceTaskGuard {
 
 /// Tokio-backed service for submitted blocking tasks.
 ///
-/// The service accepts fallible [`Runnable`](crate::task::Runnable) and
-/// [`Callable`](crate::task::Callable) tasks, runs them through Tokio, and
+/// The service accepts fallible [`Runnable`](qubit_function::Runnable) and
+/// [`Callable`](qubit_function::Callable) tasks, runs them through Tokio, and
 /// returns awaitable handles for their final results.
 #[derive(Default, Clone)]
 pub struct TokioExecutorService {

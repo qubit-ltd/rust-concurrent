@@ -11,8 +11,9 @@ use super::Executor;
 /// Marker trait for executors whose execution carrier is a future.
 ///
 /// A `FutureExecutor` is still an [`Executor`]: it executes
-/// [`Runnable`](crate::task::Runnable) and [`Callable`](crate::task::Callable)
-/// tasks through [`Executor::execute`] and [`Executor::call`].
+/// [`Runnable`](qubit_function::Runnable) and
+/// [`Callable`](qubit_function::Callable) tasks through [`Executor::execute`]
+/// and [`Executor::call`].
 /// Its distinguishing contract is that `Self::Execution<R, E>` should be a
 /// future resolving to `Result<R, E>`.
 ///

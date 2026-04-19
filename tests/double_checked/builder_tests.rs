@@ -104,8 +104,7 @@ mod tests {
         fn test_execution_builder_prepare_accepts_box_runnable() {
             let data = ArcStdMutex::new(42);
             let builder = DoubleCheckedLock::on(&data).when(|| true);
-            let prepare_action =
-                qubit_concurrent::task::BoxRunnable::new(|| Ok::<(), io::Error>(()));
+            let prepare_action = qubit_function::BoxRunnable::new(|| Ok::<(), io::Error>(()));
 
             let prepared = builder.prepare(prepare_action);
 

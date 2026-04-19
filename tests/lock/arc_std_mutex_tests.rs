@@ -19,9 +19,9 @@ use std::{
 };
 
 use qubit_concurrent::{
-    lock::ArcStdMutex,
     Lock,
     TryLockError,
+    lock::ArcStdMutex,
 };
 
 #[cfg(test)]

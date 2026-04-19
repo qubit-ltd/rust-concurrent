@@ -12,7 +12,11 @@ mod tests {
 
     use qubit_concurrent::{
         double_checked::DoubleCheckedLock,
-        lock::{ArcRwLock, ArcStdMutex, Lock},
+        lock::{
+            ArcRwLock,
+            ArcStdMutex,
+            Lock,
+        },
     };
 
     mod test_double_checked_lock_on {

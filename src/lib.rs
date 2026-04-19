@@ -27,6 +27,8 @@ pub use double_checked::{
 pub use executor::{
     AsyncExecutor,
     AsyncExecutorService,
+    BoxCallable,
+    BoxRunnable,
     Callable,
     DirectExecutor,
     Executor,

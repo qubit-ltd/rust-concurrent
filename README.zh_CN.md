@@ -27,6 +27,12 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 - **非阻塞**：专为异步上下文设计，不会阻塞线程
 - **Tokio 集成**：构建于 Tokio 的同步原语之上
 
+### ⚙️ **任务执行**
+- **Executor**：用于提交和执行任务的 executor trait
+- **ExecutorService**：支持优雅关闭的生命周期管理
+- **Runnable / Callable**：从 `qubit-function` 重新导出的、一次性可失败任务抽象
+- **灵活执行**：支持同步任务与异步任务执行
+
 ### 🔁 **双重检查锁**
 - **DoubleCheckedLock**：可链式配置的双重检查流程（锁外/锁内两次条件判断、可选 prepare / 回滚 / 提交、`call` / `call_mut` 任务）
 - **ExecutionResult**：结构化结果（成功、条件未满足、任务或 prepare 错误等）
@@ -280,6 +286,40 @@ fn main() {
 - [`try_write<F, R>(&self, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.try_write) - 尝试获取写锁（非阻塞）
 - [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcAsyncRwLock.html#method.clone) - 克隆 Arc 引用
 
+### Executor
+
+用于执行已提交任务的 trait。
+
+**方法：**
+- [`execute(&self, task: Box<dyn FnOnce() + Send + 'static>)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Executor.html#tymethod.execute) - 执行同步任务
+
+### AsyncExecutor
+
+用于提交异步任务的 trait。
+
+**方法：**
+- [`spawn<F>(&self, future: F)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.AsyncExecutor.html#tymethod.spawn) - 提交异步任务
+
+### ExecutorService
+
+为 executor 提供生命周期管理的 trait。
+
+**方法：**
+- [`shutdown(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.shutdown) - 启动优雅关闭
+- [`shutdown_now(&self) -> Vec<BoxRunnable<Infallible>>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.shutdown_now) - 尝试停止所有任务并返回尚未开始执行的任务
+- [`is_shutdown(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.is_shutdown) - 检查 executor 是否已关闭
+- [`is_terminated(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.is_terminated) - 检查所有任务是否已完成
+- [`await_termination(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.await_termination) - 等待任务完成
+
+### Runnable 与 Callable
+
+从 `qubit-function` 重新导出的任务抽象。
+
+**方法：**
+- [`run(self) -> Result<(), E>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Runnable.html#tymethod.run) - 执行一次性可失败动作
+- [`call(self) -> Result<R, E>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Callable.html#tymethod.call) - 执行一次性可失败计算
+- [`into_box()`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Runnable.html#method.into_box) - 转换为 `BoxRunnable` 或 `BoxCallable`
+
 ### DoubleCheckedLock
 
 双重检查锁流式 API 的入口；详见 [`DoubleCheckedLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLock.html) 与 [`ExecutionBuilder`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html)。
@@ -287,7 +327,7 @@ fn main() {
 **典型步骤：**
 - [`DoubleCheckedLock::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLock.html#method.on) — 绑定实现 [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) 的类型（例如 [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html)、[`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html)）
 - [`ExecutionBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.when-1) — 快路径条件（在锁外与锁内各执行一次）
-- 可选 [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.prepare-1) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.rollback_prepare-1) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.commit_prepare-1)
+- 可选 [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.prepare-1) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.rollback_prepare-1) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.commit_prepare-1) — 可失败 `Runnable` 钩子
 - [`call`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call-1) 或 [`call_mut`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call_mut-1) — 在锁保护下执行任务
 - [`get_result`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.get_result-1) — 得到 [`ExecutionResult`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/enum.ExecutionResult.html)
 

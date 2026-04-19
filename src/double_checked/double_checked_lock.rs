@@ -14,7 +14,10 @@
 //! # Author
 //!
 //! Haixing Hu
-use super::execution_builder::{ExecutionBuilder, Initial};
+use super::execution_builder::{
+    ExecutionBuilder,
+    Initial,
+};
 use crate::lock::Lock;
 
 /// The entry point for the fluent API of the double-checked locking

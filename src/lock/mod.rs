@@ -22,8 +22,8 @@
 
 // Trait definitions
 mod async_lock;
-mod try_lock_error;
 mod lock;
+mod try_lock_error;
 
 // Implementations
 mod arc_async_mutex;

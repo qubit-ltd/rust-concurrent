@@ -74,11 +74,11 @@ mod async_lock_trait_tests {
     async fn test_async_mutex_try_with_lock_returns_none_when_locked() {
         use std::{
             sync::{
+                Arc,
                 atomic::{
                     AtomicBool,
                     Ordering,
                 },
-                Arc,
             },
             time::Duration,
         };
@@ -328,7 +328,10 @@ mod async_lock_trait_tests {
             .expect("failed to acquire initial mutex guard");
 
         let result = AsyncLock::try_read(&mutex, |value| *value);
-        assert!(result.is_none(), "Expected None when mutex is already locked");
+        assert!(
+            result.is_none(),
+            "Expected None when mutex is already locked"
+        );
     }
 
     #[tokio::test]
@@ -339,7 +342,10 @@ mod async_lock_trait_tests {
             .expect("failed to acquire initial mutex guard");
 
         let result = AsyncLock::try_write(&mutex, |value| *value);
-        assert!(result.is_none(), "Expected None when mutex is already locked");
+        assert!(
+            result.is_none(),
+            "Expected None when mutex is already locked"
+        );
     }
 }
 

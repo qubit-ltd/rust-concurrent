@@ -7,8 +7,8 @@
  *
  ******************************************************************************/
 use qubit_concurrent::{
-    lock::ArcStdMutex,
     Lock,
+    lock::ArcStdMutex,
 };
 
 fn main() {

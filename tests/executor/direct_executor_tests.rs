@@ -8,12 +8,25 @@
  ******************************************************************************/
 //! Tests for [`DirectExecutor`](qubit_concurrent::DirectExecutor).
 
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    io,
+    sync::{
+        Arc,
+        atomic::{
+            AtomicUsize,
+            Ordering,
+        },
+    },
 };
 
-use qubit_concurrent::{DirectExecutor, Executor};
+use qubit_concurrent::{
+    BoxCallable,
+    BoxRunnable,
+    Callable,
+    DirectExecutor,
+    Executor,
+    Runnable,
+};
 
 #[test]
 fn test_direct_executor_execute_runs_inline() {
@@ -26,4 +39,18 @@ fn test_direct_executor_execute_runs_inline() {
     }));
 
     assert_eq!(value.load(Ordering::Acquire), 1);
+}
+
+#[test]
+fn test_executor_reexports_function_task_types() {
+    let runnable: BoxRunnable<io::Error> = Runnable::into_box(|| Ok::<(), io::Error>(()));
+    runnable.run().expect("re-exported runnable should run");
+
+    let callable: BoxCallable<i32, io::Error> = Callable::into_box(|| Ok::<i32, io::Error>(42));
+    assert_eq!(
+        callable
+            .call()
+            .expect("re-exported callable should return a value"),
+        42,
+    );
 }

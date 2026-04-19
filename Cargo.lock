@@ -444,9 +444,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-function"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b71a48c7ad08fc09637fb0743e5f18c2043538f051b10cef3fba9d81c9dd80b"
+checksum = "b4c37b8cac9a3b7e9ee98a3c5724d46f45e5937be9a2db58a0a56050a0b4e3ed"
 dependencies = [
  "parking_lot",
  "pastey",

@@ -9,11 +9,17 @@
 //! Tests for [`TokioExecutor`](qubit_concurrent::TokioExecutor).
 
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{
+        AtomicUsize,
+        Ordering,
+    },
 };
 
-use qubit_concurrent::{AsyncExecutor, TokioExecutor};
+use qubit_concurrent::{
+    AsyncExecutor,
+    TokioExecutor,
+};
 
 #[tokio::test]
 async fn test_tokio_executor_spawn_runs_task() {

@@ -10,13 +10,21 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        Arc,
+        atomic::{
+            AtomicBool,
+            Ordering,
+        },
+        mpsc,
     },
     time::Duration,
 };
 
-use qubit_concurrent::{Executor, ExecutorService, ThreadPerTaskExecutorService};
+use qubit_concurrent::{
+    Executor,
+    ExecutorService,
+    ThreadPerTaskExecutorService,
+};
 
 /// Creates a current-thread Tokio runtime for driving async termination APIs in sync tests.
 fn create_runtime() -> tokio::runtime::Runtime {
@@ -66,8 +74,14 @@ fn test_thread_per_task_executor_service_shutdown_now_sets_shutdown_and_returns_
     let executor = ThreadPerTaskExecutorService::new();
     let queued = executor.shutdown_now();
 
-    assert!(queued.is_empty(), "shutdown_now should return no queued tasks");
-    assert!(executor.is_shutdown(), "shutdown_now should set shutdown flag");
+    assert!(
+        queued.is_empty(),
+        "shutdown_now should return no queued tasks"
+    );
+    assert!(
+        executor.is_shutdown(),
+        "shutdown_now should set shutdown flag"
+    );
 }
 
 #[test]

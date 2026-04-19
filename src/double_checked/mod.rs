@@ -26,7 +26,12 @@ pub mod executor_error;
 
 pub use builder_error::BuilderError;
 pub use double_checked_lock::DoubleCheckedLock;
-pub use execution_builder::{Conditioned, Configuring, ExecutionBuilder, Initial};
+pub use execution_builder::{
+    Conditioned,
+    Configuring,
+    ExecutionBuilder,
+    Initial,
+};
 pub use execution_context::ExecutionContext;
 pub use execution_logger::ExecutionLogger;
 pub use execution_result::ExecutionResult;

@@ -416,7 +416,9 @@ impl<T: ?Sized> Lock<T> for ParkingLotMutex<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        self.try_lock().map(|guard| f(&*guard)).ok_or(TryLockError::WouldBlock)
+        self.try_lock()
+            .map(|guard| f(&*guard))
+            .ok_or(TryLockError::WouldBlock)
     }
 
     #[inline]
@@ -424,6 +426,8 @@ impl<T: ?Sized> Lock<T> for ParkingLotMutex<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        self.try_lock().map(|mut guard| f(&mut *guard)).ok_or(TryLockError::WouldBlock)
+        self.try_lock()
+            .map(|mut guard| f(&mut *guard))
+            .ok_or(TryLockError::WouldBlock)
     }
 }

@@ -10,13 +10,21 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
+        atomic::{
+            AtomicBool,
+            AtomicUsize,
+            Ordering,
+        },
     },
     time::Duration,
 };
 
-use qubit_concurrent::{AsyncExecutor, AsyncExecutorService, TokioExecutorService};
+use qubit_concurrent::{
+    AsyncExecutor,
+    AsyncExecutorService,
+    TokioExecutorService,
+};
 
 #[tokio::test]
 async fn test_tokio_executor_service_shutdown_blocks_new_tasks() {

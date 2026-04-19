@@ -12,13 +12,19 @@ mod tests {
         io,
         sync::{
             Arc,
-            atomic::{AtomicBool, Ordering},
+            atomic::{
+                AtomicBool,
+                Ordering,
+            },
         },
     };
 
     use qubit_concurrent::{
         double_checked::DoubleCheckedLock,
-        lock::{ArcStdMutex, Lock},
+        lock::{
+            ArcStdMutex,
+            Lock,
+        },
     };
 
     mod test_execution_builder_initial_state {
@@ -90,6 +96,18 @@ mod tests {
             let prepared = builder.prepare(|| Ok::<(), io::Error>(()));
 
             // Should stay in Conditioned state
+            let _: qubit_concurrent::double_checked::ExecutionBuilder<ArcStdMutex<i32>, i32, _> =
+                prepared;
+        }
+
+        #[test]
+        fn test_execution_builder_prepare_accepts_box_runnable() {
+            let data = ArcStdMutex::new(42);
+            let builder = DoubleCheckedLock::on(&data).when(|| true);
+            let prepare_action = qubit_concurrent::BoxRunnable::new(|| Ok::<(), io::Error>(()));
+
+            let prepared = builder.prepare(prepare_action);
+
             let _: qubit_concurrent::double_checked::ExecutionBuilder<ArcStdMutex<i32>, i32, _> =
                 prepared;
         }
@@ -347,7 +365,10 @@ mod tests {
 
         #[test]
         fn test_execution_builder_condition_changes_between_checks() {
-            use std::sync::atomic::{AtomicI32, Ordering};
+            use std::sync::atomic::{
+                AtomicI32,
+                Ordering,
+            };
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -389,7 +410,10 @@ mod tests {
 
         #[test]
         fn test_execution_builder_write_lock_condition_changes_between_checks() {
-            use std::sync::atomic::{AtomicI32, Ordering};
+            use std::sync::atomic::{
+                AtomicI32,
+                Ordering,
+            };
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -417,7 +441,10 @@ mod tests {
 
         #[test]
         fn test_execution_builder_rollback_prepare_runs_on_unmet_after_prepare() {
-            use std::sync::atomic::{AtomicI32, Ordering};
+            use std::sync::atomic::{
+                AtomicI32,
+                Ordering,
+            };
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -462,7 +489,10 @@ mod tests {
 
         #[test]
         fn test_execution_builder_no_rollback_prepare_without_prepare_on_unmet() {
-            use std::sync::atomic::{AtomicI32, Ordering};
+            use std::sync::atomic::{
+                AtomicI32,
+                Ordering,
+            };
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -498,7 +528,10 @@ mod tests {
 
         #[test]
         fn test_execution_builder_rollback_prepare_failure_on_unmet_turns_into_failed() {
-            use std::sync::atomic::{AtomicI32, Ordering};
+            use std::sync::atomic::{
+                AtomicI32,
+                Ordering,
+            };
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -672,6 +705,68 @@ mod tests {
                 "Prepare rollback should run when condition becomes unmet after prepare"
             );
             assert_eq!(data.read(|v| *v), 42);
+        }
+
+        #[test]
+        fn test_execution_builder_read_prepare_failure_logs_with_logger() {
+            let data = ArcStdMutex::new(42);
+
+            let result = DoubleCheckedLock::on(&data)
+                .logger(log::Level::Info, "Prepare failure")
+                .when(|| true)
+                .prepare(|| Err::<(), _>(io::Error::other("prepare failed")))
+                .call(|value: &i32| Ok::<i32, io::Error>(*value))
+                .get_result();
+
+            assert!(result.is_failed());
+        }
+
+        #[test]
+        fn test_execution_builder_write_prepare_failure_logs_with_logger() {
+            let data = ArcStdMutex::new(42);
+
+            let result = DoubleCheckedLock::on(&data)
+                .logger(log::Level::Info, "Prepare failure")
+                .when(|| true)
+                .prepare(|| Err::<(), _>(io::Error::other("prepare failed")))
+                .call_mut(|value: &mut i32| {
+                    *value += 1;
+                    Ok::<i32, io::Error>(*value)
+                })
+                .get_result();
+
+            assert!(result.is_failed());
+            assert_eq!(data.read(|v| *v), 42);
+        }
+
+        #[test]
+        fn test_execution_builder_commit_prepare_failure_logs_with_logger() {
+            let data = ArcStdMutex::new(42);
+
+            let result = DoubleCheckedLock::on(&data)
+                .logger(log::Level::Info, "Commit failure")
+                .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .commit_prepare(|| Err::<(), _>(io::Error::other("commit failed")))
+                .call(|value: &i32| Ok::<i32, io::Error>(*value))
+                .get_result();
+
+            assert!(result.is_failed());
+        }
+
+        #[test]
+        fn test_execution_builder_rollback_prepare_failure_logs_with_logger() {
+            let data = ArcStdMutex::new(42);
+
+            let result = DoubleCheckedLock::on(&data)
+                .logger(log::Level::Info, "Rollback failure")
+                .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(|| Err::<(), _>(io::Error::other("rollback failed")))
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("task failed")))
+                .get_result();
+
+            assert!(result.is_failed());
         }
     }
 }

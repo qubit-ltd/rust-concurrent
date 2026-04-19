@@ -201,7 +201,10 @@ impl<T> Lock<T> for ArcMutex<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        self.inner.try_lock().map(|guard| f(&*guard)).ok_or(TryLockError::WouldBlock)
+        self.inner
+            .try_lock()
+            .map(|guard| f(&*guard))
+            .ok_or(TryLockError::WouldBlock)
     }
 
     /// Attempts to acquire a write lock without blocking
@@ -239,7 +242,10 @@ impl<T> Lock<T> for ArcMutex<T> {
     where
         F: FnOnce(&mut T) -> R,
     {
-        self.inner.try_lock().map(|mut guard| f(&mut *guard)).ok_or(TryLockError::WouldBlock)
+        self.inner
+            .try_lock()
+            .map(|mut guard| f(&mut *guard))
+            .ok_or(TryLockError::WouldBlock)
     }
 }
 

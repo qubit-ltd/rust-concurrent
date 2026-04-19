@@ -10,14 +10,26 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc,
+        Mutex,
+        MutexGuard,
+        atomic::{
+            AtomicBool,
+            AtomicUsize,
+            Ordering,
+        },
     },
 };
 
-use tokio::{sync::Notify, task::JoinHandle};
+use tokio::{
+    sync::Notify,
+    task::JoinHandle,
+};
 
-use super::{async_executor::AsyncExecutor, async_executor_service::AsyncExecutorService};
+use super::{
+    async_executor::AsyncExecutor,
+    async_executor_service::AsyncExecutorService,
+};
 
 /// Shared state for `TokioExecutorService`.
 #[derive(Default)]

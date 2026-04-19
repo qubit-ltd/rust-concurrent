@@ -10,7 +10,10 @@
 mod tests {
     use std::io;
 
-    use qubit_concurrent::double_checked::{BuilderError, ExecutorError};
+    use qubit_concurrent::double_checked::{
+        BuilderError,
+        ExecutorError,
+    };
 
     mod test_executor_error {
         use super::*;

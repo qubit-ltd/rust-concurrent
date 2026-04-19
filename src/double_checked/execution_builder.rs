@@ -13,15 +13,28 @@
 //! # Author
 //!
 //! Haixing Hu
-use std::{error::Error, marker::PhantomData};
+use std::{
+    error::Error,
+    marker::PhantomData,
+};
 
 use qubit_common::BoxError;
 use qubit_function::{
-    BoxFunctionOnce, BoxMutatingFunctionOnce, BoxSupplierOnce, BoxTester, FunctionOnce,
-    MutatingFunctionOnce, SupplierOnce, Tester,
+    BoxFunctionOnce,
+    BoxMutatingFunctionOnce,
+    BoxRunnable,
+    BoxTester,
+    FunctionOnce,
+    MutatingFunctionOnce,
+    Runnable,
+    Tester,
 };
 
-use super::{ExecutionContext, ExecutionLogger, ExecutionResult};
+use super::{
+    ExecutionContext,
+    ExecutionLogger,
+    ExecutionResult,
+};
 use crate::lock::Lock;
 
 /// Initial typestate: builder just created; may call
@@ -69,13 +82,13 @@ where
     tester: Option<BoxTester>,
 
     /// Optional preparation action executed between first check and locking
-    prepare_action: Option<BoxSupplierOnce<Result<(), BoxError>>>,
+    prepare_action: Option<BoxRunnable<BoxError>>,
 
     /// Optional rollback action for a successfully completed prepare action
-    rollback_prepare_action: Option<BoxSupplierOnce<Result<(), BoxError>>>,
+    rollback_prepare_action: Option<BoxRunnable<BoxError>>,
 
     /// Optional commit action for a successfully completed prepare action
-    commit_prepare_action: Option<BoxSupplierOnce<Result<(), BoxError>>>,
+    commit_prepare_action: Option<BoxRunnable<BoxError>>,
 
     /// Phantom data for typestate pattern, tracks current builder state
     _phantom: PhantomData<(T, State)>,
@@ -279,19 +292,16 @@ where
     ///
     /// # Arguments
     ///
-    /// * `prepare_action` - Any type that implements
-    ///   `SupplierOnce<Result<(), E>>`
+    /// * `prepare_action` - Any type that implements `Runnable<E>`
     #[inline]
-    pub fn prepare<S, E>(mut self, prepare_action: S) -> Self
+    pub fn prepare<R, E>(mut self, prepare_action: R) -> Self
     where
-        S: SupplierOnce<Result<(), E>> + 'static,
+        R: Runnable<E> + 'static,
         E: Error + Send + Sync + 'static,
     {
         let boxed = prepare_action.into_box();
-        self.prepare_action = Some(BoxSupplierOnce::new(move || {
-            boxed
-                .get()
-                .map_err(|e| Box::new(e) as BoxError)
+        self.prepare_action = Some(BoxRunnable::new(move || {
+            boxed.run().map_err(|e| Box::new(e) as BoxError)
         }));
         self
     }
@@ -310,19 +320,16 @@ where
     ///
     /// # Arguments
     ///
-    /// * `rollback_prepare_action` - Any type that implements
-    ///   `SupplierOnce<Result<(), E>>`
+    /// * `rollback_prepare_action` - Any type that implements `Runnable<E>`
     #[inline]
-    pub fn rollback_prepare<S, E>(mut self, rollback_prepare_action: S) -> Self
+    pub fn rollback_prepare<R, E>(mut self, rollback_prepare_action: R) -> Self
     where
-        S: SupplierOnce<Result<(), E>> + 'static,
+        R: Runnable<E> + 'static,
         E: Error + Send + Sync + 'static,
     {
         let boxed = rollback_prepare_action.into_box();
-        self.rollback_prepare_action = Some(BoxSupplierOnce::new(move || {
-            boxed
-                .get()
-                .map_err(|e| Box::new(e) as BoxError)
+        self.rollback_prepare_action = Some(BoxRunnable::new(move || {
+            boxed.run().map_err(|e| Box::new(e) as BoxError)
         }));
         self
     }
@@ -341,19 +348,16 @@ where
     ///
     /// # Arguments
     ///
-    /// * `commit_prepare_action` - Any type that implements
-    ///   `SupplierOnce<Result<(), E>>`
+    /// * `commit_prepare_action` - Any type that implements `Runnable<E>`
     #[inline]
-    pub fn commit_prepare<S, E>(mut self, commit_prepare_action: S) -> Self
+    pub fn commit_prepare<R, E>(mut self, commit_prepare_action: R) -> Self
     where
-        S: SupplierOnce<Result<(), E>> + 'static,
+        R: Runnable<E> + 'static,
         E: Error + Send + Sync + 'static,
     {
         let boxed = commit_prepare_action.into_box();
-        self.commit_prepare_action = Some(BoxSupplierOnce::new(move || {
-            boxed
-                .get()
-                .map_err(|e| Box::new(e) as BoxError)
+        self.commit_prepare_action = Some(BoxRunnable::new(move || {
+            boxed.run().map_err(|e| Box::new(e) as BoxError)
         }));
         self
     }
@@ -485,7 +489,7 @@ where
 
         // Execute prepare action
         let prepare_completed = if let Some(prepare_action) = self.prepare_action.take() {
-            if let Err(e) = prepare_action.get() {
+            if let Err(e) = prepare_action.run() {
                 if let Some(ref logger) = self.logger {
                     logger.log_prepare_failed(&e);
                 } else {
@@ -550,7 +554,7 @@ where
 
         // Execute prepare action
         let prepare_completed = if let Some(prepare_action) = self.prepare_action.take() {
-            if let Err(e) = prepare_action.get() {
+            if let Err(e) = prepare_action.run() {
                 if let Some(ref logger) = self.logger {
                     logger.log_prepare_failed(&e);
                 } else {
@@ -595,15 +599,15 @@ where
         E: Error + Send + Sync + 'static,
     {
         if result.is_success() {
-            if let Some(commit_prepare_action) = self.commit_prepare_action.take() {
-                if let Err(e) = commit_prepare_action.get() {
-                    if let Some(ref logger) = self.logger {
-                        logger.log_prepare_commit_failed(&e);
-                    } else {
-                        log::error!("Prepare commit action failed: {}", e);
-                    }
-                    result = ExecutionResult::prepare_commit_failed(e);
+            if let Some(commit_prepare_action) = self.commit_prepare_action.take()
+                && let Err(e) = commit_prepare_action.run()
+            {
+                if let Some(ref logger) = self.logger {
+                    logger.log_prepare_commit_failed(&e);
+                } else {
+                    log::error!("Prepare commit action failed: {}", e);
                 }
+                result = ExecutionResult::prepare_commit_failed(e);
             }
             return result;
         }
@@ -614,15 +618,15 @@ where
             ExecutionResult::Success(_) => unreachable!("success handled above"),
         };
 
-        if let Some(rollback_prepare_action) = self.rollback_prepare_action.take() {
-            if let Err(e) = rollback_prepare_action.get() {
-                if let Some(ref logger) = self.logger {
-                    logger.log_prepare_rollback_failed(&e);
-                } else {
-                    log::error!("Prepare rollback action failed: {}", e);
-                }
-                result = ExecutionResult::prepare_rollback_failed(original, e.to_string());
+        if let Some(rollback_prepare_action) = self.rollback_prepare_action.take()
+            && let Err(e) = rollback_prepare_action.run()
+        {
+            if let Some(ref logger) = self.logger {
+                logger.log_prepare_rollback_failed(&e);
+            } else {
+                log::error!("Prepare rollback action failed: {}", e);
             }
+            result = ExecutionResult::prepare_rollback_failed(original, e.to_string());
         }
         result
     }

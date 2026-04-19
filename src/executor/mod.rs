@@ -18,6 +18,7 @@ mod async_executor;
 mod async_executor_service;
 mod callable;
 mod direct_executor;
+#[allow(clippy::module_inception)]
 mod executor;
 mod executor_service;
 mod runnable;
@@ -28,11 +29,17 @@ mod tokio_executor_service;
 
 pub use async_executor::AsyncExecutor;
 pub use async_executor_service::AsyncExecutorService;
-pub use callable::Callable;
+pub use callable::{
+    BoxCallable,
+    Callable,
+};
 pub use direct_executor::DirectExecutor;
 pub use executor::Executor;
 pub use executor_service::ExecutorService;
-pub use runnable::Runnable;
+pub use runnable::{
+    BoxRunnable,
+    Runnable,
+};
 pub use thread_per_task_executor::ThreadPerTaskExecutor;
 pub use thread_per_task_executor_service::ThreadPerTaskExecutorService;
 pub use tokio_executor::TokioExecutor;

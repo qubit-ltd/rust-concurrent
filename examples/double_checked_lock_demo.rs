@@ -15,19 +15,19 @@
 //! Haixing Hu
 
 use std::sync::{
+    Arc,
     atomic::{
         AtomicBool,
         Ordering,
     },
-    Arc,
 };
 
 use qubit_concurrent::{
+    DoubleCheckedLock,
     lock::{
         ArcMutex,
         Lock,
     },
-    DoubleCheckedLock,
 };
 
 #[derive(Debug, thiserror::Error)]

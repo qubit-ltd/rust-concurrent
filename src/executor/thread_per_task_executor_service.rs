@@ -7,16 +7,27 @@
  *
  ******************************************************************************/
 use std::{
+    convert::Infallible,
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc,
+        Mutex,
+        MutexGuard,
+        atomic::{
+            AtomicBool,
+            AtomicUsize,
+            Ordering,
+        },
     },
     thread,
 };
 
-use super::{executor::Executor, executor_service::ExecutorService, runnable::Runnable};
+use super::{
+    executor::Executor,
+    executor_service::ExecutorService,
+    runnable::BoxRunnable,
+};
 
 /// Shared state for `ThreadPerTaskExecutorService`.
 #[derive(Default)]
@@ -91,7 +102,7 @@ impl ExecutorService for ThreadPerTaskExecutorService {
     ///
     /// The service executes submitted work immediately, so there is no pending
     /// task queue to return.
-    fn shutdown_now(&self) -> Vec<Box<dyn Runnable>> {
+    fn shutdown_now(&self) -> Vec<BoxRunnable<Infallible>> {
         self.state.shutdown.store(true, Ordering::Release);
         Vec::new()
     }

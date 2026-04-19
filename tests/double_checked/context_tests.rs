@@ -12,11 +12,17 @@ mod tests {
         io,
         sync::{
             Arc,
-            atomic::{AtomicBool, Ordering},
+            atomic::{
+                AtomicBool,
+                Ordering,
+            },
         },
     };
 
-    use qubit_concurrent::{double_checked::DoubleCheckedLock, lock::ArcStdMutex};
+    use qubit_concurrent::{
+        double_checked::DoubleCheckedLock,
+        lock::ArcStdMutex,
+    };
 
     mod test_execution_context {
         use super::*;

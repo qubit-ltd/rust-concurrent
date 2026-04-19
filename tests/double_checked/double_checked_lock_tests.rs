@@ -13,13 +13,20 @@ mod tests {
         fmt,
         sync::{
             Arc,
-            atomic::{AtomicBool, Ordering},
+            atomic::{
+                AtomicBool,
+                Ordering,
+            },
         },
     };
 
     use qubit_concurrent::{
         double_checked::DoubleCheckedLock,
-        lock::{ArcRwLock, ArcStdMutex, Lock},
+        lock::{
+            ArcRwLock,
+            ArcStdMutex,
+            Lock,
+        },
     };
 
     #[derive(Debug)]

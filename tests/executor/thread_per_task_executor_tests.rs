@@ -13,7 +13,10 @@ use std::{
     time::Duration,
 };
 
-use qubit_concurrent::{Executor, ThreadPerTaskExecutor};
+use qubit_concurrent::{
+    Executor,
+    ThreadPerTaskExecutor,
+};
 
 #[test]
 fn test_thread_per_task_executor_execute_runs_task() {

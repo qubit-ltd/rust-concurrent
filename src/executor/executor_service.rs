@@ -7,11 +7,15 @@
  *
  ******************************************************************************/
 use std::{
+    convert::Infallible,
     future::Future,
     pin::Pin,
 };
 
-use super::{executor::Executor, runnable::Runnable};
+use super::{
+    executor::Executor,
+    runnable::BoxRunnable,
+};
 
 /// Shutdownable executor trait
 ///
@@ -72,8 +76,12 @@ pub trait ExecutorService: Executor {
     ///
     /// # Returns
     ///
-    /// List of tasks that never commenced execution
-    fn shutdown_now(&self) -> Vec<Box<dyn Runnable>>;
+    /// List of tasks that never commenced execution.
+    ///
+    /// Returned tasks are fallible `qubit-function` runnables. Current executor
+    /// service implementations in this crate execute work immediately, so they
+    /// return an empty list.
+    fn shutdown_now(&self) -> Vec<BoxRunnable<Infallible>>;
 
     /// Returns true if this executor has been shut down
     ///

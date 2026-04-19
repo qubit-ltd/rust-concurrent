@@ -30,7 +30,7 @@ Qubit Concurrent provides easy-to-use wrappers around both synchronous and async
 ### ⚙️ **Task Execution**
 - **Executor**: JDK-like executor trait for task submission and execution
 - **ExecutorService**: Lifecycle management with graceful shutdown support
-- **Runnable**: Task abstraction similar to Java's Runnable interface
+- **Runnable / Callable**: Fallible one-time task abstractions re-exported from `qubit-function`
 - **Flexible Execution**: Support for both synchronous and asynchronous task execution
 
 ### 🔁 **Double-checked locking**
@@ -352,17 +352,19 @@ A trait providing lifecycle management for executors, similar to JDK's ExecutorS
 
 **Methods:**
 - [`shutdown(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.shutdown) - Initiate graceful shutdown
-- [`shutdown_now(&self) -> Vec<Box<dyn Runnable>>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.shutdown_now) - Attempt to stop all tasks
+- [`shutdown_now(&self) -> Vec<BoxRunnable<Infallible>>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.shutdown_now) - Attempt to stop all tasks and return tasks that never started
 - [`is_shutdown(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.is_shutdown) - Check if executor is shutdown
 - [`is_terminated(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.is_terminated) - Check if all tasks completed
 - [`await_termination(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.ExecutorService.html#tymethod.await_termination) - Wait for task completion
 
-### Runnable
+### Runnable and Callable
 
-A trait representing a runnable task, similar to JDK's Runnable interface.
+Task abstractions re-exported from `qubit-function`.
 
 **Methods:**
-- [`run(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Runnable.html#tymethod.run) - Execute the task
+- [`run(self) -> Result<(), E>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Runnable.html#tymethod.run) - Execute a fallible one-time action
+- [`call(self) -> Result<R, E>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Callable.html#tymethod.call) - Execute a fallible one-time computation
+- [`into_box()`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Runnable.html#method.into_box) - Convert a task into `BoxRunnable` or `BoxCallable`
 
 ### DoubleCheckedLock
 
@@ -371,7 +373,7 @@ Entry point for the double-checked locking fluent API; see [`DoubleCheckedLock`]
 **Typical flow:**
 - [`DoubleCheckedLock::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLock.html#method.on) — attach to a [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) (for example [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html) or [`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html))
 - [`ExecutionBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.when-1) — fast-path predicate (evaluated twice: outside and inside the lock)
-- Optional [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.prepare-1) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.rollback_prepare-1) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.commit_prepare-1)
+- Optional [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.prepare-1) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.rollback_prepare-1) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.commit_prepare-1) — fallible `Runnable` hooks
 - [`call`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call-1) or [`call_mut`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call_mut-1) — task under the lock
 - [`get_result`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.get_result-1) — [`ExecutionResult`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/enum.ExecutionResult.html)
 

@@ -79,7 +79,8 @@ use super::{
 pub struct TokioExecutor;
 
 impl Executor for TokioExecutor {
-    type Execution<R, E> = TokioExecution<R, E>
+    type Execution<R, E>
+        = TokioExecution<R, E>
     where
         R: Send + 'static,
         E: Send + 'static;

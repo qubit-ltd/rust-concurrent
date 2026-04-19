@@ -30,7 +30,7 @@ doctest = false
 # Core utilities
 qubit-common = "0.6"
 # Atomic utilities
-qubit-atomic = "0.8"
+qubit-atomic = "0.9"
 # Async runtime
 tokio = { version = "1.52", features = ["sync", "rt"] }
 # Error handling

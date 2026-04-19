@@ -57,7 +57,8 @@ use super::Executor;
 pub struct ThreadPerTaskExecutor;
 
 impl Executor for ThreadPerTaskExecutor {
-    type Execution<R, E> = TaskHandle<R, E>
+    type Execution<R, E>
+        = TaskHandle<R, E>
     where
         R: Send + 'static,
         E: Send + 'static;

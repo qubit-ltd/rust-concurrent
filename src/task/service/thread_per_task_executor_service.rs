@@ -14,14 +14,13 @@ use std::{
         Condvar,
         Mutex,
         MutexGuard,
-        atomic::Ordering,
     },
     thread,
 };
 
 use qubit_atomic::{
     AtomicBool,
-    AtomicUsize,
+    AtomicCounter,
 };
 use qubit_function::Callable;
 
@@ -40,7 +39,7 @@ use super::{
 #[derive(Default)]
 struct ThreadPerTaskExecutorServiceState {
     shutdown: AtomicBool,
-    active_tasks: AtomicUsize,
+    active_tasks: AtomicCounter,
     submission_lock: Mutex<()>,
     termination_lock: Mutex<()>,
     termination: Condvar,
@@ -63,7 +62,7 @@ impl ThreadPerTaskExecutorServiceState {
 
     /// Wakes termination waiters when shutdown and task completion allow it.
     fn notify_if_terminated(&self) {
-        if self.shutdown.load() && self.active_tasks.load() == 0 {
+        if self.shutdown.load() && self.active_tasks.is_zero() {
             self.termination.notify_all();
         }
     }
@@ -71,7 +70,7 @@ impl ThreadPerTaskExecutorServiceState {
     /// Blocks the current thread until the service is terminated.
     fn wait_for_termination(&self) {
         let mut guard = self.lock_termination();
-        while !(self.shutdown.load() && self.active_tasks.load() == 0) {
+        while !(self.shutdown.load() && self.active_tasks.is_zero()) {
             guard = self
                 .termination
                 .wait(guard)
@@ -125,10 +124,7 @@ impl ExecutorService for ThreadPerTaskExecutorService {
         if self.state.shutdown.load() {
             return Err(RejectedExecution::Shutdown);
         }
-        self.state
-            .active_tasks
-            .inner()
-            .fetch_add(1, Ordering::AcqRel);
+        self.state.active_tasks.inc();
         drop(submission_guard);
 
         let (handle, sender, done) = TaskHandle::channel();
@@ -137,7 +133,7 @@ impl ExecutorService for ThreadPerTaskExecutorService {
             let result = run_callable(task);
             let _ = sender.send(result);
             done.store(true);
-            if state.active_tasks.inner().fetch_sub(1, Ordering::AcqRel) == 1 {
+            if state.active_tasks.dec() == 0 {
                 state.notify_if_terminated();
             }
         });
@@ -157,7 +153,7 @@ impl ExecutorService for ThreadPerTaskExecutorService {
     fn shutdown_now(&self) -> ShutdownReport {
         let _guard = self.state.lock_submission();
         self.state.shutdown.store(true);
-        let running = self.state.active_tasks.load();
+        let running = self.state.active_tasks.get();
         self.state.notify_if_terminated();
         ShutdownReport::new(0, running, 0)
     }
@@ -169,7 +165,7 @@ impl ExecutorService for ThreadPerTaskExecutorService {
 
     /// Returns whether shutdown was requested and all tasks are finished.
     fn is_terminated(&self) -> bool {
-        self.is_shutdown() && self.state.active_tasks.load() == 0
+        self.is_shutdown() && self.state.active_tasks.is_zero()
     }
 
     /// Waits for all accepted tasks to complete after shutdown.

@@ -8,10 +8,7 @@
  ******************************************************************************/
 #[cfg(test)]
 mod tests {
-    use qubit_concurrent::double_checked::{
-        ExecutionLogger,
-        ExecutorConfig,
-    };
+    use qubit_concurrent::double_checked::{ExecutionLogger, ExecutorConfig};
 
     mod test_execution_logger {
         use super::*;
@@ -24,7 +21,14 @@ mod tests {
             assert_eq!(logger.level, log::Level::Info);
             assert_eq!(logger.unmet_message, "Test message");
             assert_eq!(logger.prepare_failed_message, "Prepare action failed");
-            assert_eq!(logger.rollback_failed_message, "Rollback action failed");
+            assert_eq!(
+                logger.prepare_commit_failed_message,
+                "Prepare commit action failed"
+            );
+            assert_eq!(
+                logger.prepare_rollback_failed_message,
+                "Prepare rollback action failed"
+            );
         }
 
         #[test]

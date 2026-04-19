@@ -13,23 +13,15 @@
 //! # Author
 //!
 //! Haixing Hu
-use std::error::Error;
-
-use qubit_function::{
-    BoxSupplierOnce,
-    SupplierOnce,
-};
-
-use crate::double_checked::{
-    execution_result::ExecutionResult,
-    ExecutionLogger,
-};
+use crate::double_checked::execution_result::ExecutionResult;
 
 /// Execution context (state after task execution)
 ///
-/// This type provides rollback and result retrieval functionality after
-/// task execution. It holds the execution status and optionally sets
-/// rollback operations.
+/// This type provides result retrieval functionality after task execution.
+///
+/// Prepare lifecycle callbacks are configured on [`super::ExecutionBuilder`]
+/// and are already applied before an `ExecutionContext` is returned. Task
+/// closures are responsible for their own rollback, cleanup, and commit logic.
 ///
 /// # Type Parameters
 ///
@@ -44,95 +36,29 @@ where
     E: std::fmt::Display,
 {
     result: ExecutionResult<T, E>,
-    rollback_action: Option<BoxSupplierOnce<Result<(), Box<dyn Error + Send + Sync>>>>,
-    rollback_on_unmet: bool,
-    logger: Option<ExecutionLogger>,
 }
 
 impl<T, E> ExecutionContext<T, E>
 where
     E: std::fmt::Display,
 {
-    /// Creates a new execution context with condition-unmet rollback policy.
+    /// Creates a new execution context.
     ///
     /// # Arguments
     ///
     /// * `result` - The execution result
-    /// * `rollback_on_unmet` - Whether rollback should run when result is
-    ///   `ConditionNotMet`
-    /// * `logger` - Optional execution logger (used for rollback failure lines)
     #[inline]
-    pub(super) fn new(
-        result: ExecutionResult<T, E>,
-        rollback_on_unmet: bool,
-        logger: Option<ExecutionLogger>,
-    ) -> Self {
-        Self {
-            result,
-            rollback_action: None,
-            rollback_on_unmet,
-            logger,
-        }
-    }
-
-    /// Sets rollback action (optional, only executed on failure)
-    ///
-    /// # Arguments
-    ///
-    /// * `rollback_action` - Any type that implements
-    ///   `SupplierOnce<Result<(), RE>>`
-    ///
-    /// # Note
-    ///
-    /// Rollback is only set and executed when `result` is `Failed`.
-    pub fn rollback<S, RE>(mut self, rollback_action: S) -> Self
-    where
-        S: SupplierOnce<Result<(), RE>> + 'static,
-        RE: Error + Send + Sync + 'static,
-    {
-        let should_register = matches!(self.result, ExecutionResult::Failed(_))
-            || (self.rollback_on_unmet && matches!(self.result, ExecutionResult::ConditionNotMet));
-        if should_register {
-            let boxed = rollback_action.into_box();
-            self.rollback_action = Some(BoxSupplierOnce::new(move || {
-                boxed
-                    .get()
-                    .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
-            }));
-        }
-        self
+    pub(super) fn new(result: ExecutionResult<T, E>) -> Self {
+        Self { result }
     }
 
     /// Gets the execution result (consumes the context)
     ///
-    /// If rollback is set and execution failed, rollback will be executed
-    /// before returning the result.
-    ///
-    /// If rollback execution fails, the error in the returned result will be
-    /// updated to `RollbackFailed`.
-    pub fn get_result(mut self) -> ExecutionResult<T, E> {
-        let should_execute = matches!(self.result, ExecutionResult::Failed(_))
-            || (self.rollback_on_unmet && matches!(self.result, ExecutionResult::ConditionNotMet));
-        if should_execute {
-            let original = match &self.result {
-                ExecutionResult::Failed(error) => Some(error.to_string()),
-                ExecutionResult::ConditionNotMet => Some("Condition not met".to_string()),
-                ExecutionResult::Success(_) => None,
-            };
-            if let (Some(rollback_action), Some(original)) = (self.rollback_action.take(), original) {
-                if let Err(rollback_error) = rollback_action.get() {
-                    if let Some(ref log) = self.logger {
-                        log.log_rollback_failed(&rollback_error);
-                    } else {
-                        log::error!("Rollback action failed: {}", rollback_error);
-                    }
-                    self.result = ExecutionResult::rollback_failed(
-                        original,
-                        rollback_error.to_string(),
-                    );
-                }
-            }
-        }
+    /// Prepare commit or rollback callbacks have already been executed by the
+    /// builder before this context was created. This method does not trigger
+    /// additional side effects.
+    #[inline]
+    pub fn get_result(self) -> ExecutionResult<T, E> {
         self.result
     }
 

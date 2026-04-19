@@ -11,18 +11,12 @@ mod tests {
     use std::{
         io,
         sync::{
-            atomic::{
-                AtomicBool,
-                Ordering,
-            },
             Arc,
+            atomic::{AtomicBool, Ordering},
         },
     };
 
-    use qubit_concurrent::{
-        double_checked::DoubleCheckedLock,
-        lock::ArcStdMutex,
-    };
+    use qubit_concurrent::{double_checked::DoubleCheckedLock, lock::ArcStdMutex};
 
     mod test_execution_context {
         use super::*;
@@ -56,9 +50,7 @@ mod tests {
             let data = ArcStdMutex::new(42);
             let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .call(|_value: &i32| {
-                    Err::<i32, _>(io::Error::other("Test error"))
-                });
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("Test error")));
 
             assert!(!context.is_success());
         }
@@ -96,9 +88,7 @@ mod tests {
             let data = ArcStdMutex::new(42);
             let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .call(|_value: &i32| {
-                    Err::<i32, _>(io::Error::other("Original error"))
-                });
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("Original error")));
 
             let final_result = context.get_result();
             if let qubit_concurrent::double_checked::ExecutionResult::Failed(
@@ -112,28 +102,24 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_context_rollback_on_failure() {
+        fn test_execution_context_rollback_prepare_on_task_failure() {
             let rollback_called = Arc::new(AtomicBool::new(false));
             let data = ArcStdMutex::new(42);
-
-            let mut context = DoubleCheckedLock::on(&data)
-                .when(|| true)
-                .call(|_value: &i32| {
-                    Err::<i32, _>(io::Error::other("Original error"))
-                });
-
             let rollback_called_clone = rollback_called.clone();
-            context = context.rollback(move || {
-                rollback_called_clone.store(true, Ordering::Release);
-                Ok::<(), io::Error>(())
-            });
+
+            let context = DoubleCheckedLock::on(&data)
+                .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(move || {
+                    rollback_called_clone.store(true, Ordering::Release);
+                    Ok::<(), io::Error>(())
+                })
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("Original error")));
 
             let final_result = context.get_result();
 
-            // Check that rollback was called
             assert!(rollback_called.load(Ordering::Acquire));
 
-            // Check that the result is still the original error since rollback succeeded
             if let qubit_concurrent::double_checked::ExecutionResult::Failed(
                 qubit_concurrent::double_checked::ExecutorError::TaskFailed(e),
             ) = final_result
@@ -145,22 +131,18 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_context_rollback_fails() {
+        fn test_execution_context_rollback_prepare_fails() {
             let data = ArcStdMutex::new(42);
-            let mut context = DoubleCheckedLock::on(&data)
+            let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .call(|_value: &i32| {
-                    Err::<i32, _>(io::Error::other("Original error"))
-                });
-
-            context =
-                context.rollback(|| Err(io::Error::other("Rollback failed")));
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(|| Err(io::Error::other("Rollback failed")))
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("Original error")));
 
             let final_result = context.get_result();
 
-            // Check that the result is now RollbackFailed
             if let qubit_concurrent::double_checked::ExecutionResult::Failed(
-                qubit_concurrent::double_checked::ExecutorError::RollbackFailed {
+                qubit_concurrent::double_checked::ExecutorError::PrepareRollbackFailed {
                     original,
                     rollback,
                 },
@@ -169,49 +151,46 @@ mod tests {
                 assert!(original.contains("Original error"));
                 assert!(rollback.contains("Rollback failed"));
             } else {
-                panic!("Expected RollbackFailed error");
+                panic!("Expected PrepareRollbackFailed error");
             }
         }
 
         #[test]
-        fn test_execution_context_rollback_not_called_on_success() {
+        fn test_execution_context_rollback_prepare_not_called_on_success() {
             let rollback_called = Arc::new(AtomicBool::new(false));
             let data = ArcStdMutex::new(42);
-
-            let mut context = DoubleCheckedLock::on(&data)
-                .when(|| true)
-                .call(|value: &i32| Ok::<i32, io::Error>(*value));
-
             let rollback_called_clone = rollback_called.clone();
-            context = context.rollback(move || {
-                rollback_called_clone.store(true, Ordering::Release);
-                Ok::<(), io::Error>(())
-            });
+
+            let context = DoubleCheckedLock::on(&data)
+                .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(move || {
+                    rollback_called_clone.store(true, Ordering::Release);
+                    Ok::<(), io::Error>(())
+                })
+                .call(|value: &i32| Ok::<i32, io::Error>(*value));
 
             let _ = context.get_result();
 
-            // Check that rollback was NOT called
             assert!(!rollback_called.load(Ordering::Acquire));
         }
 
         #[test]
-        fn test_execution_context_rollback_not_called_on_condition_not_met() {
+        fn test_execution_context_rollback_prepare_not_called_without_prepare() {
             let rollback_called = Arc::new(AtomicBool::new(false));
             let data = ArcStdMutex::new(42);
-
-            let mut context = DoubleCheckedLock::on(&data)
-                .when(|| false)
-                .call(|value: &i32| Ok::<i32, io::Error>(*value));
-
             let rollback_called_clone = rollback_called.clone();
-            context = context.rollback(move || {
-                rollback_called_clone.store(true, Ordering::Release);
-                Ok::<(), io::Error>(())
-            });
+
+            let context = DoubleCheckedLock::on(&data)
+                .when(|| false)
+                .rollback_prepare(move || {
+                    rollback_called_clone.store(true, Ordering::Release);
+                    Ok::<(), io::Error>(())
+                })
+                .call(|value: &i32| Ok::<i32, io::Error>(*value));
 
             let _ = context.get_result();
 
-            // Check that rollback was NOT called
             assert!(!rollback_called.load(Ordering::Acquire));
         }
 
@@ -287,19 +266,19 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_context_finish_with_rollback() {
+        fn test_execution_context_finish_with_prepare_rollback() {
             let rollback_called = Arc::new(AtomicBool::new(false));
             let data = ArcStdMutex::new(());
-
-            let mut context = DoubleCheckedLock::on(&data)
-                .when(|| true)
-                .execute(|_: &()| Err::<(), _>(io::Error::other("error")));
-
             let rollback_called_clone = rollback_called.clone();
-            context = context.rollback(move || {
-                rollback_called_clone.store(true, Ordering::Release);
-                Ok::<(), io::Error>(())
-            });
+
+            let context = DoubleCheckedLock::on(&data)
+                .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(move || {
+                    rollback_called_clone.store(true, Ordering::Release);
+                    Ok::<(), io::Error>(())
+                })
+                .execute(|_: &()| Err::<(), _>(io::Error::other("error")));
 
             assert!(!context.finish());
             assert!(rollback_called.load(Ordering::Acquire));

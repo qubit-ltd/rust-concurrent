@@ -12,21 +12,14 @@ mod tests {
         error::Error,
         fmt,
         sync::{
-            atomic::{
-                AtomicBool,
-                Ordering,
-            },
             Arc,
+            atomic::{AtomicBool, Ordering},
         },
     };
 
     use qubit_concurrent::{
         double_checked::DoubleCheckedLock,
-        lock::{
-            ArcRwLock,
-            ArcStdMutex,
-            Lock,
-        },
+        lock::{ArcRwLock, ArcStdMutex, Lock},
     };
 
     #[derive(Debug)]
@@ -101,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn test_task_fails_and_rollback_is_called() {
+    fn test_task_fails_after_prepare_and_prepare_rollback_is_called() {
         let data = ArcStdMutex::new(10);
         let condition = Arc::new(AtomicBool::new(true));
         let rollback_called = Arc::new(AtomicBool::new(false));
@@ -111,16 +104,17 @@ mod tests {
                 let condition = condition.clone();
                 move || condition.load(Ordering::Acquire)
             })
-            .call_mut(|value: &mut i32| {
-                *value += 1;
-                Err::<i32, _>(TestError("task failed"))
-            })
-            .rollback({
+            .prepare(|| Ok::<(), TestError>(()))
+            .rollback_prepare({
                 let rollback_called = rollback_called.clone();
                 move || {
                     rollback_called.store(true, Ordering::Release);
                     Ok::<(), TestError>(())
                 }
+            })
+            .call_mut(|value: &mut i32| {
+                *value += 1;
+                Err::<i32, _>(TestError("task failed"))
             })
             .get_result();
 

@@ -28,8 +28,8 @@ use crate::lock::Lock;
 /// - **Fluent API**: Provides a chainable interface for configuration
 /// - **Double-Checking**: Checks the condition before and after acquiring
 ///   the lock to minimize unnecessary lock contention
-/// - **Flexible Configuration**: Supports prepare actions, rollback actions,
-///   and logging
+/// - **Flexible Configuration**: Supports prepare actions, prepare commit and
+///   rollback actions, and logging
 /// - **Type Safety**: Leverages Rust's type system to ensure thread safety
 ///
 /// # Use Cases
@@ -40,8 +40,22 @@ use crate::lock::Lock;
 ///   conditions are met
 /// - **Performance Optimization**: Reduce unnecessary lock acquisitions to
 ///   improve concurrency
-/// - **Transactional Operations**: Operations that require prepare and
-///   rollback mechanisms
+/// - **Transactional Operations**: Operations that require prepare lifecycle
+///   hooks around a double-checked task
+///
+/// # Prepare Lifecycle
+///
+/// A prepare action runs after the first condition check and before acquiring
+/// the lock. If it succeeds, the framework owns only the prepare lifecycle:
+/// it calls [`ExecutionBuilder::rollback_prepare`] after a failed second check
+/// or task error, and [`ExecutionBuilder::commit_prepare`] after task success.
+/// These callbacks run after the lock has been released.
+///
+/// The task closure is responsible for its own transactional behavior. If the
+/// task performs multiple steps, mutates protected data, or touches external
+/// systems, it must handle its own rollback, cleanup, and commit boundaries.
+/// The framework only observes whether the task returned `Ok` or `Err`; it
+/// cannot know which task steps have completed.
 ///
 /// # Examples
 ///
@@ -183,7 +197,7 @@ use crate::lock::Lock;
 /// assert!(initialized.load());
 /// ```
 ///
-/// ## Database Transaction with Prepare and Rollback
+/// ## Database Transaction with Prepare Lifecycle
 ///
 /// ```rust
 /// use std::sync::Arc;
@@ -197,6 +211,7 @@ use crate::lock::Lock;
 /// let balance = ArcMutex::new(1000);
 /// let transaction_active = Arc::new(AtomicBool::new(false));
 /// let connection_opened = Arc::new(AtomicBool::new(false));
+/// let transaction_committed = Arc::new(AtomicBool::new(false));
 /// let transaction_rolled_back = Arc::new(AtomicBool::new(false));
 ///
 /// let result = DoubleCheckedLock::on(&balance)
@@ -212,8 +227,24 @@ use crate::lock::Lock;
 ///             Ok::<(), std::io::Error>(())
 ///         }
 ///     })
+///     .rollback_prepare({
+///         let transaction_rolled_back = transaction_rolled_back.clone();
+///         move || {
+///             // Roll back resources created by prepare.
+///             transaction_rolled_back.store(true);
+///             Ok::<(), std::io::Error>(())
+///         }
+///     })
+///     .commit_prepare({
+///         let transaction_committed = transaction_committed.clone();
+///         move || {
+///             // Commit resources created by prepare after the task succeeds.
+///             transaction_committed.store(true);
+///             Ok::<(), std::io::Error>(())
+///         }
+///     })
 ///     .call_mut(move |amount: &mut i32| {
-///         // Deduct from balance
+///         // Task logic owns its own rollback/cleanup if it has partial steps.
 ///         if *amount >= 100 {
 ///             *amount -= 100;
 ///             transaction_active.store(true);
@@ -225,18 +256,12 @@ use crate::lock::Lock;
 ///             ))
 ///         }
 ///     })
-///     .rollback({
-///         let transaction_rolled_back = transaction_rolled_back.clone();
-///         move || {
-///             // Rollback transaction and close connection
-///             transaction_rolled_back.store(true);
-///             Ok::<(), std::io::Error>(())
-///         }
-///     })
 ///     .get_result();
 ///
 /// assert!(result.is_success());
 /// assert!(connection_opened.load());
+/// assert!(transaction_committed.load());
+/// assert!(!transaction_rolled_back.load());
 /// ```
 ///
 /// ## Cache Lookup with Read Lock
@@ -334,31 +359,31 @@ impl DoubleCheckedLock {
     ///     .get_result();
     ///
     /// assert!(result.is_success());
-/// assert_eq!(result.unwrap(), 1);
-/// ```
-///
-/// ## Optional logging
-///
-/// ```rust
-/// use log::Level;
-/// use qubit_concurrent::{DoubleCheckedLock, ArcMutex, lock::Lock};
-///
-/// let data = ArcMutex::new(0);
-///
-/// let result = DoubleCheckedLock::on(&data)
-///     .logger(Level::Debug, "skip: tester returned false")
-///     .when(|| false)
-///     .call_mut(|value: &mut i32| {
-///         *value += 1;
-///         Ok::<i32, std::io::Error>(*value)
-///     })
-///     .get_result();
-///
-/// assert!(result.is_unmet());
-/// assert_eq!(data.read(|v| *v), 0);
-/// ```
-///
-/// # Type Parameters
+    /// assert_eq!(result.unwrap(), 1);
+    /// ```
+    ///
+    /// ## Optional logging
+    ///
+    /// ```rust
+    /// use log::Level;
+    /// use qubit_concurrent::{DoubleCheckedLock, ArcMutex, lock::Lock};
+    ///
+    /// let data = ArcMutex::new(0);
+    ///
+    /// let result = DoubleCheckedLock::on(&data)
+    ///     .logger(Level::Debug, "skip: tester returned false")
+    ///     .when(|| false)
+    ///     .call_mut(|value: &mut i32| {
+    ///         *value += 1;
+    ///         Ok::<i32, std::io::Error>(*value)
+    ///     })
+    ///     .get_result();
+    ///
+    /// assert!(result.is_unmet());
+    /// assert_eq!(data.read(|v| *v), 0);
+    /// ```
+    ///
+    /// # Type Parameters
     ///
     /// * `'a` - The lifetime parameter for the lock reference
     /// * `L` - The lock type that must implement the `Lock<T>` trait

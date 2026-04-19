@@ -16,11 +16,11 @@
 
 use std::fmt;
 
-/// Logger for double-checked execution (condition unmet, prepare/rollback
-/// failures).
+/// Logger for double-checked execution (condition unmet, prepare failures,
+/// prepare commit failures, and prepare rollback failures).
 ///
 /// Holds log level and unmet message (previous `LogConfig` surface) plus
-/// message prefixes for prepare/rollback errors, and an `enabled` switch.
+/// message prefixes for prepare lifecycle errors, and an `enabled` switch.
 ///
 /// # Author
 ///
@@ -40,14 +40,17 @@ pub struct ExecutionLogger {
     /// `"{prefix}: {error}"`.
     pub prepare_failed_message: String,
 
-    /// Prefix for rollback-failure lines (logged at error level), formatted as
-    /// `"{prefix}: {error}"`.
-    pub rollback_failed_message: String,
+    /// Prefix for prepare-commit failure lines (logged at error level),
+    /// formatted as `"{prefix}: {error}"`.
+    pub prepare_commit_failed_message: String,
+
+    /// Prefix for prepare-rollback failure lines (logged at error level),
+    /// formatted as `"{prefix}: {error}"`.
+    pub prepare_rollback_failed_message: String,
 }
 
 impl ExecutionLogger {
-    /// Creates a logger with default prepare/rollback prefixes matching the
-    /// previous hard-coded messages.
+    /// Creates a logger with default prepare lifecycle prefixes.
     #[inline]
     pub fn new(level: log::Level, unmet_message: impl Into<String>) -> Self {
         Self {
@@ -55,7 +58,8 @@ impl ExecutionLogger {
             level,
             unmet_message: unmet_message.into(),
             prepare_failed_message: "Prepare action failed".to_string(),
-            rollback_failed_message: "Rollback action failed".to_string(),
+            prepare_commit_failed_message: "Prepare commit action failed".to_string(),
+            prepare_rollback_failed_message: "Prepare rollback action failed".to_string(),
         }
     }
 
@@ -77,12 +81,21 @@ impl ExecutionLogger {
         log::error!("{}: {}", self.prepare_failed_message, err);
     }
 
-    /// Logs a rollback failure at error level when [`Self::enabled`].
+    /// Logs a prepare commit failure at error level when [`Self::enabled`].
     #[inline]
-    pub fn log_rollback_failed<E: fmt::Display>(&self, err: E) {
+    pub fn log_prepare_commit_failed<E: fmt::Display>(&self, err: E) {
         if !self.enabled {
             return;
         }
-        log::error!("{}: {}", self.rollback_failed_message, err);
+        log::error!("{}: {}", self.prepare_commit_failed_message, err);
+    }
+
+    /// Logs a prepare rollback failure at error level when [`Self::enabled`].
+    #[inline]
+    pub fn log_prepare_rollback_failed<E: fmt::Display>(&self, err: E) {
+        if !self.enabled {
+            return;
+        }
+        log::error!("{}: {}", self.prepare_rollback_failed_message, err);
     }
 }

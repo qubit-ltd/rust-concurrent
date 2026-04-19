@@ -10,10 +10,7 @@
 mod tests {
     use std::io;
 
-    use qubit_concurrent::double_checked::{
-        BuilderError,
-        ExecutorError,
-    };
+    use qubit_concurrent::double_checked::{BuilderError, ExecutorError};
 
     mod test_executor_error {
         use super::*;
@@ -33,15 +30,22 @@ mod tests {
         }
 
         #[test]
-        fn test_executor_error_rollback_failed_display() {
-            let error = ExecutorError::<String>::RollbackFailed {
+        fn test_executor_error_prepare_commit_failed_display() {
+            let error = ExecutorError::<String>::PrepareCommitFailed("Commit failed".to_string());
+            let display = format!("{}", error);
+            assert_eq!(display, "Prepare commit action failed: Commit failed");
+        }
+
+        #[test]
+        fn test_executor_error_prepare_rollback_failed_display() {
+            let error = ExecutorError::<String>::PrepareRollbackFailed {
                 original: "Original error".to_string(),
                 rollback: "Rollback error".to_string(),
             };
             let display = format!("{}", error);
             assert_eq!(
                 display,
-                "Rollback failed: original error = Original error, rollback error = Rollback error"
+                "Prepare rollback failed: original error = Original error, rollback error = Rollback error"
             );
         }
 

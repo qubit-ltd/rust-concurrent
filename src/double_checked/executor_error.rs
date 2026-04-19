@@ -14,14 +14,14 @@
 //!
 //! Haixing Hu
 
-use std::fmt;
 use std::error::Error;
+use std::fmt;
 
 /// Executor error types
 ///
 /// Defines various error conditions that can occur during executor
-/// operation, including condition failures, task execution errors,
-/// and rollback failures.
+/// operation, including task execution errors, prepare failures, prepare
+/// commit failures, and prepare rollback failures.
 ///
 /// # Type Parameters
 ///
@@ -58,11 +58,14 @@ where
     /// Preparation action failed
     PrepareFailed(String),
 
-    /// Rollback operation failed
-    RollbackFailed {
+    /// Commit action for a successfully completed prepare action failed.
+    PrepareCommitFailed(String),
+
+    /// Rollback action for a successfully completed prepare action failed.
+    PrepareRollbackFailed {
         /// The original error that triggered the rollback
         original: String,
-        /// The error that occurred during rollback
+        /// The error that occurred during prepare rollback
         rollback: String,
     },
 
@@ -82,10 +85,13 @@ where
             ExecutorError::PrepareFailed(msg) => {
                 write!(f, "Preparation action failed: {}", msg)
             }
-            ExecutorError::RollbackFailed { original, rollback } => {
+            ExecutorError::PrepareCommitFailed(msg) => {
+                write!(f, "Prepare commit action failed: {}", msg)
+            }
+            ExecutorError::PrepareRollbackFailed { original, rollback } => {
                 write!(
                     f,
-                    "Rollback failed: original error = {}, rollback error = {}",
+                    "Prepare rollback failed: original error = {}, rollback error = {}",
                     original, rollback
                 )
             }

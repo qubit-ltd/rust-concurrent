@@ -92,10 +92,19 @@ where
         ExecutionResult::Failed(ExecutorError::PrepareFailed(msg.to_string()))
     }
 
-    /// Builds a failed result with [`ExecutorError::RollbackFailed`].
+    /// Builds a failed result with [`ExecutorError::PrepareCommitFailed`].
     #[inline]
-    pub fn rollback_failed(original: impl Into<String>, rollback: impl Into<String>) -> Self {
-        ExecutionResult::Failed(ExecutorError::RollbackFailed {
+    pub fn prepare_commit_failed(msg: impl fmt::Display) -> Self {
+        ExecutionResult::Failed(ExecutorError::PrepareCommitFailed(msg.to_string()))
+    }
+
+    /// Builds a failed result with [`ExecutorError::PrepareRollbackFailed`].
+    #[inline]
+    pub fn prepare_rollback_failed(
+        original: impl Into<String>,
+        rollback: impl Into<String>,
+    ) -> Self {
+        ExecutionResult::Failed(ExecutorError::PrepareRollbackFailed {
             original: original.into(),
             rollback: rollback.into(),
         })

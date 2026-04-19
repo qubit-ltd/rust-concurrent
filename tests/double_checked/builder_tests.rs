@@ -11,20 +11,14 @@ mod tests {
     use std::{
         io,
         sync::{
-            atomic::{
-                AtomicBool,
-                Ordering,
-            },
             Arc,
+            atomic::{AtomicBool, Ordering},
         },
     };
 
     use qubit_concurrent::{
         double_checked::DoubleCheckedLock,
-        lock::{
-            ArcStdMutex,
-            Lock,
-        },
+        lock::{ArcStdMutex, Lock},
     };
 
     mod test_execution_builder_initial_state {
@@ -242,26 +236,26 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_builder_with_rollback() {
+        fn test_execution_builder_with_prepare_rollback() {
             let data = ArcStdMutex::new(10);
             let condition = Arc::new(AtomicBool::new(true));
             let rollback_called = Arc::new(AtomicBool::new(false));
+            let rollback_called_clone = rollback_called.clone();
 
-            let mut context = DoubleCheckedLock::on(&data)
+            let context = DoubleCheckedLock::on(&data)
                 .when({
                     let condition = condition.clone();
                     move || condition.load(Ordering::Acquire)
+                })
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(move || {
+                    rollback_called_clone.store(true, Ordering::Release);
+                    Ok::<(), io::Error>(())
                 })
                 .call_mut(|value: &mut i32| {
                     *value = 30;
                     Err::<i32, _>(io::Error::other("Task failed"))
                 });
-
-            let rollback_called_clone = rollback_called.clone();
-            context = context.rollback(move || {
-                rollback_called_clone.store(true, Ordering::Release);
-                Ok::<(), io::Error>(())
-            });
 
             let result = context.get_result();
 
@@ -353,10 +347,7 @@ mod tests {
 
         #[test]
         fn test_execution_builder_condition_changes_between_checks() {
-            use std::sync::atomic::{
-                AtomicI32,
-                Ordering,
-            };
+            use std::sync::atomic::{AtomicI32, Ordering};
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -398,10 +389,7 @@ mod tests {
 
         #[test]
         fn test_execution_builder_write_lock_condition_changes_between_checks() {
-            use std::sync::atomic::{
-                AtomicI32,
-                Ordering,
-            };
+            use std::sync::atomic::{AtomicI32, Ordering};
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -428,11 +416,8 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_builder_rollback_runs_on_unmet_after_prepare_by_default() {
-            use std::sync::atomic::{
-                AtomicI32,
-                Ordering,
-            };
+        fn test_execution_builder_rollback_prepare_runs_on_unmet_after_prepare() {
+            use std::sync::atomic::{AtomicI32, Ordering};
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -454,16 +439,16 @@ mod tests {
                         Ok::<(), io::Error>(())
                     }
                 })
-                .call_mut(|value: &mut i32| {
-                    *value = 20;
-                    Ok::<(), io::Error>(())
-                })
-                .rollback({
+                .rollback_prepare({
                     let rollback_called = rollback_called.clone();
                     move || {
                         rollback_called.store(true, Ordering::Release);
                         Ok::<(), io::Error>(())
                     }
+                })
+                .call_mut(|value: &mut i32| {
+                    *value = 20;
+                    Ok::<(), io::Error>(())
                 });
 
             let result = context.get_result();
@@ -476,11 +461,8 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_builder_rollback_on_unmet_can_be_disabled() {
-            use std::sync::atomic::{
-                AtomicI32,
-                Ordering,
-            };
+        fn test_execution_builder_no_rollback_prepare_without_prepare_on_unmet() {
+            use std::sync::atomic::{AtomicI32, Ordering};
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -494,18 +476,16 @@ mod tests {
                         count == 1
                     }
                 })
-                .prepare(|| Ok::<(), io::Error>(()))
-                .rollback_on_unmet(false)
-                .call_mut(|value: &mut i32| {
-                    *value = 20;
-                    Ok::<(), io::Error>(())
-                })
-                .rollback({
+                .rollback_prepare({
                     let rollback_called = rollback_called.clone();
                     move || {
                         rollback_called.store(true, Ordering::Release);
                         Ok::<(), io::Error>(())
                     }
+                })
+                .call_mut(|value: &mut i32| {
+                    *value = 20;
+                    Ok::<(), io::Error>(())
                 });
 
             let result = context.get_result();
@@ -517,11 +497,8 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_builder_rollback_failure_on_unmet_turns_into_failed() {
-            use std::sync::atomic::{
-                AtomicI32,
-                Ordering,
-            };
+        fn test_execution_builder_rollback_prepare_failure_on_unmet_turns_into_failed() {
+            use std::sync::atomic::{AtomicI32, Ordering};
 
             let data = ArcStdMutex::new(10);
             let call_count = Arc::new(AtomicI32::new(0));
@@ -535,17 +512,75 @@ mod tests {
                     }
                 })
                 .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(|| Err::<(), _>(io::Error::other("rollback failed")))
                 .call_mut(|value: &mut i32| {
                     *value = 20;
                     Ok::<(), io::Error>(())
-                })
-                .rollback(|| Err::<(), _>(io::Error::other("rollback failed")));
+                });
 
             let result = context.get_result();
 
             assert!(result.is_failed());
             assert_eq!(data.read(|v| *v), 10);
             assert_eq!(call_count.load(Ordering::Acquire), 2);
+        }
+
+        #[test]
+        fn test_execution_builder_commit_prepare_runs_on_success() {
+            let data = ArcStdMutex::new(10);
+            let commit_called = Arc::new(AtomicBool::new(false));
+            let rollback_called = Arc::new(AtomicBool::new(false));
+
+            let result = DoubleCheckedLock::on(&data)
+                .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare({
+                    let rollback_called = rollback_called.clone();
+                    move || {
+                        rollback_called.store(true, Ordering::Release);
+                        Ok::<(), io::Error>(())
+                    }
+                })
+                .commit_prepare({
+                    let commit_called = commit_called.clone();
+                    move || {
+                        commit_called.store(true, Ordering::Release);
+                        Ok::<(), io::Error>(())
+                    }
+                })
+                .call_mut(|value: &mut i32| {
+                    *value = 20;
+                    Ok::<(), io::Error>(())
+                })
+                .get_result();
+
+            assert!(result.is_success());
+            assert!(commit_called.load(Ordering::Acquire));
+            assert!(!rollback_called.load(Ordering::Acquire));
+            assert_eq!(data.read(|v| *v), 20);
+        }
+
+        #[test]
+        fn test_execution_builder_commit_prepare_failure_turns_into_failed() {
+            let data = ArcStdMutex::new(10);
+
+            let result = DoubleCheckedLock::on(&data)
+                .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .commit_prepare(|| Err::<(), _>(io::Error::other("commit failed")))
+                .call_mut(|value: &mut i32| {
+                    *value = 20;
+                    Ok::<(), io::Error>(())
+                })
+                .get_result();
+
+            assert!(matches!(
+                result,
+                qubit_concurrent::double_checked::ExecutionResult::Failed(
+                    qubit_concurrent::double_checked::ExecutorError::PrepareCommitFailed(_)
+                )
+            ));
+            assert_eq!(data.read(|v| *v), 20);
         }
     }
 
@@ -593,7 +628,10 @@ mod tests {
             let check_counter = Arc::new(AtomicUsize::new(0));
 
             let result = DoubleCheckedLock::on(&data)
-                .logger(log::Level::Info, "Condition not met at second check (write)")
+                .logger(
+                    log::Level::Info,
+                    "Condition not met at second check (write)",
+                )
                 .when({
                     let check_counter = Arc::clone(&check_counter);
                     move || check_counter.fetch_add(1, Ordering::AcqRel) == 0
@@ -609,7 +647,7 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_builder_unmet_after_prepare_executes_rollback_path() {
+        fn test_execution_builder_unmet_after_prepare_executes_rollback_prepare() {
             let data = ArcStdMutex::new(42);
             let check_counter = Arc::new(AtomicUsize::new(0));
             let rollback_called = Arc::new(AtomicBool::new(false));
@@ -621,17 +659,17 @@ mod tests {
                     move || check_counter.fetch_add(1, Ordering::AcqRel) == 0
                 })
                 .prepare(|| Ok::<(), io::Error>(()))
-                .call(|value: &i32| Ok::<i32, io::Error>(*value))
-                .rollback(move || {
+                .rollback_prepare(move || {
                     rollback_called_clone.store(true, Ordering::Release);
                     Ok::<(), io::Error>(())
                 })
+                .call(|value: &i32| Ok::<i32, io::Error>(*value))
                 .get_result();
 
             assert!(result.is_unmet());
             assert!(
                 rollback_called.load(Ordering::Acquire),
-                "Rollback should run when condition becomes unmet after prepare"
+                "Prepare rollback should run when condition becomes unmet after prepare"
             );
             assert_eq!(data.read(|v| *v), 42);
         }

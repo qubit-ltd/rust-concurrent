@@ -13,27 +13,14 @@
 //! # Author
 //!
 //! Haixing Hu
-use std::{
-    error::Error,
-    marker::PhantomData,
-};
+use std::{error::Error, marker::PhantomData};
 
 use qubit_function::{
-    BoxFunctionOnce,
-    BoxMutatingFunctionOnce,
-    BoxSupplierOnce,
-    BoxTester,
-    FunctionOnce,
-    MutatingFunctionOnce,
-    SupplierOnce,
-    Tester,
+    BoxFunctionOnce, BoxMutatingFunctionOnce, BoxSupplierOnce, BoxTester, FunctionOnce,
+    MutatingFunctionOnce, SupplierOnce, Tester,
 };
 
-use super::{
-    ExecutionContext,
-    ExecutionLogger,
-    ExecutionResult,
-};
+use super::{ExecutionContext, ExecutionLogger, ExecutionResult};
 use crate::lock::Lock;
 
 /// Initial typestate: builder just created; may call
@@ -83,8 +70,11 @@ where
     /// Optional preparation action executed between first check and locking
     prepare_action: Option<BoxSupplierOnce<Result<(), Box<dyn Error + Send + Sync>>>>,
 
-    /// Whether rollback should run when condition is unmet after prepare
-    rollback_on_unmet: bool,
+    /// Optional rollback action for a successfully completed prepare action
+    rollback_prepare_action: Option<BoxSupplierOnce<Result<(), Box<dyn Error + Send + Sync>>>>,
+
+    /// Optional commit action for a successfully completed prepare action
+    commit_prepare_action: Option<BoxSupplierOnce<Result<(), Box<dyn Error + Send + Sync>>>>,
 
     /// Phantom data for typestate pattern, tracks current builder state
     _phantom: PhantomData<(T, State)>,
@@ -113,7 +103,8 @@ where
             logger: None,
             tester: None,
             prepare_action: None,
-            rollback_on_unmet: true,
+            rollback_prepare_action: None,
+            commit_prepare_action: None,
             _phantom: PhantomData,
         }
     }
@@ -140,7 +131,8 @@ where
             logger: self.logger,
             tester: self.tester,
             prepare_action: self.prepare_action,
-            rollback_on_unmet: self.rollback_on_unmet,
+            rollback_prepare_action: self.rollback_prepare_action,
+            commit_prepare_action: self.commit_prepare_action,
             _phantom: PhantomData,
         }
     }
@@ -176,7 +168,8 @@ where
             logger: self.logger,
             tester: self.tester,
             prepare_action: self.prepare_action,
-            rollback_on_unmet: self.rollback_on_unmet,
+            rollback_prepare_action: self.rollback_prepare_action,
+            commit_prepare_action: self.commit_prepare_action,
             _phantom: PhantomData,
         }
     }
@@ -241,7 +234,8 @@ where
             logger: self.logger,
             tester: self.tester,
             prepare_action: self.prepare_action,
-            rollback_on_unmet: self.rollback_on_unmet,
+            rollback_prepare_action: self.rollback_prepare_action,
+            commit_prepare_action: self.commit_prepare_action,
             _phantom: PhantomData,
         }
     }
@@ -251,6 +245,8 @@ where
 ///
 /// In this state, the test condition has been set and the builder allows:
 /// - Setting an optional prepare action via `prepare()`
+/// - Setting optional prepare finalization via `rollback_prepare()` and
+///   `commit_prepare()`
 /// - Executing read-only tasks with return values via `call()`
 /// - Executing read-write tasks with return values via `call_mut()`
 /// - Executing read-only tasks without return values via `execute()`
@@ -263,7 +259,18 @@ where
     L: Lock<T>,
     T: 'static,
 {
-    /// Sets prepare action (optional, executed between first check and locking)
+    /// Sets the prepare action.
+    ///
+    /// The prepare action is executed after the first condition check passes and
+    /// before the lock is acquired. If it returns `Ok`, the framework considers
+    /// prepare complete and will later call [`Self::commit_prepare`] after task
+    /// success or [`Self::rollback_prepare`] after an unmet second check or task
+    /// error.
+    ///
+    /// If the prepare action returns `Err`, the framework returns
+    /// `PrepareFailed` and does not call `rollback_prepare`. A prepare action
+    /// that can partially succeed before returning `Err` must clean up its own
+    /// partial state before it returns.
     ///
     /// # State Transition
     ///
@@ -288,18 +295,65 @@ where
         self
     }
 
-    /// Configures whether rollback should run when condition becomes unmet
-    /// after prepare action and lock acquisition.
+    /// Sets the rollback action for a successfully completed prepare action.
     ///
-    /// This option is enabled by default to provide safer transactional
-    /// semantics for prepare actions with side effects.
+    /// The callback is only used if [`Self::prepare`] completed successfully and
+    /// the operation cannot be committed: the second condition check fails after
+    /// the prepare action, or the task returns an error. It is executed after the
+    /// read or write lock has been released.
+    ///
+    /// This callback is responsible only for compensating the prepare action. It
+    /// is not a task rollback hook. Task closures must handle their own
+    /// transactional behavior, partial progress, cleanup, and commit logic.
+    /// Prepare actions with side effects should always provide this callback.
     ///
     /// # Arguments
     ///
-    /// * `enabled` - `true` to run rollback on second-check unmet condition
+    /// * `rollback_prepare_action` - Any type that implements
+    ///   `SupplierOnce<Result<(), E>>`
     #[inline]
-    pub fn rollback_on_unmet(mut self, enabled: bool) -> Self {
-        self.rollback_on_unmet = enabled;
+    pub fn rollback_prepare<S, E>(mut self, rollback_prepare_action: S) -> Self
+    where
+        S: SupplierOnce<Result<(), E>> + 'static,
+        E: Error + Send + Sync + 'static,
+    {
+        let boxed = rollback_prepare_action.into_box();
+        self.rollback_prepare_action = Some(BoxSupplierOnce::new(move || {
+            boxed
+                .get()
+                .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
+        }));
+        self
+    }
+
+    /// Sets the commit action for a successfully completed prepare action.
+    ///
+    /// The callback is only used when [`Self::prepare`] completed successfully,
+    /// the second condition check passed, and the task returned success. It is
+    /// executed after the read or write lock has been released.
+    ///
+    /// If the commit callback itself fails, the final result becomes
+    /// `PrepareCommitFailed`. The framework does not call
+    /// [`Self::rollback_prepare`] after a commit failure because the commit may
+    /// have partially completed; the commit callback must handle its own cleanup
+    /// or ambiguity.
+    ///
+    /// # Arguments
+    ///
+    /// * `commit_prepare_action` - Any type that implements
+    ///   `SupplierOnce<Result<(), E>>`
+    #[inline]
+    pub fn commit_prepare<S, E>(mut self, commit_prepare_action: S) -> Self
+    where
+        S: SupplierOnce<Result<(), E>> + 'static,
+        E: Error + Send + Sync + 'static,
+    {
+        let boxed = commit_prepare_action.into_box();
+        self.commit_prepare_action = Some(BoxSupplierOnce::new(move || {
+            boxed
+                .get()
+                .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)
+        }));
         self
     }
 
@@ -328,9 +382,8 @@ where
         R: 'static,
     {
         let task_boxed = task.into_box();
-        let logger = self.logger.clone();
-        let (result, rollback_on_unmet) = self.execute_with_read_lock(task_boxed);
-        ExecutionContext::new(result, rollback_on_unmet, logger)
+        let result = self.execute_with_read_lock(task_boxed);
+        ExecutionContext::new(result)
     }
 
     /// Executes a read-write task (with return value)
@@ -351,9 +404,8 @@ where
         R: 'static,
     {
         let task_boxed = task.into_box();
-        let logger = self.logger.clone();
-        let (result, rollback_on_unmet) = self.execute_with_write_lock(task_boxed);
-        ExecutionContext::new(result, rollback_on_unmet, logger)
+        let result = self.execute_with_write_lock(task_boxed);
+        ExecutionContext::new(result)
     }
 
     /// Executes a read-only task (without return value)
@@ -407,14 +459,14 @@ where
     ///
     /// # Returns
     ///
-    /// `(result, rollback_if_unmet)`. The boolean is `true` only when prepare
-    /// completed successfully, the inner check fails, and
-    /// [`Self::rollback_on_unmet`] is enabled;
-    /// it is passed to [`ExecutionContext::new`].
+    /// The final [`ExecutionResult`]. If prepare completed successfully, this
+    /// method commits prepare after task success or rolls it back after an unmet
+    /// inner check or task failure. Prepare finalization happens after the lock
+    /// has been released.
     fn execute_with_read_lock<R, E>(
         mut self,
         task: BoxFunctionOnce<T, Result<R, E>>,
-    ) -> (ExecutionResult<R, E>, bool)
+    ) -> ExecutionResult<R, E>
     where
         E: Error + Send + Sync + 'static,
     {
@@ -427,42 +479,44 @@ where
             if let Some(ref logger) = self.logger {
                 logger.log_unmet_message();
             }
-            return (ExecutionResult::unmet(), false);
+            return ExecutionResult::unmet();
         }
 
         // Execute prepare action
-        let mut prepare_executed = false;
-        if let Some(prepare_action) = self.prepare_action.take() {
+        let prepare_completed = if let Some(prepare_action) = self.prepare_action.take() {
             if let Err(e) = prepare_action.get() {
                 if let Some(ref logger) = self.logger {
                     logger.log_prepare_failed(&e);
                 } else {
                     log::error!("Prepare action failed: {}", e);
                 }
-                return (ExecutionResult::prepare_failed(e), false);
+                return ExecutionResult::prepare_failed(e);
             }
-            prepare_executed = true;
-        }
+            true
+        } else {
+            false
+        };
 
         // Acquire lock and execute
-        let rollback_on_unmet = self.rollback_on_unmet;
-        self.lock.read(|data| {
+        let result = self.lock.read(|data| {
             // Second check (inside lock)
             if !tester.test() {
                 if let Some(ref logger) = self.logger {
                     logger.log_unmet_message();
                 }
-                return (
-                    ExecutionResult::unmet(),
-                    prepare_executed && rollback_on_unmet,
-                );
+                return ExecutionResult::unmet();
             }
             // Execute task
             match task.apply(data) {
-                Ok(v) => (ExecutionResult::success(v), false),
-                Err(e) => (ExecutionResult::task_failed(e), false),
+                Ok(v) => ExecutionResult::success(v),
+                Err(e) => ExecutionResult::task_failed(e),
             }
-        })
+        });
+        if prepare_completed {
+            self.finalize_prepare(result)
+        } else {
+            result
+        }
     }
 
     /// Runs the configured double-checked sequence under a **write** lock.
@@ -472,11 +526,12 @@ where
     ///
     /// # Returns
     ///
-    /// Same tuple semantics as [`Self::execute_with_read_lock`].
+    /// Same result and prepare-finalization semantics as
+    /// [`Self::execute_with_read_lock`].
     fn execute_with_write_lock<R, E>(
         mut self,
         task: BoxMutatingFunctionOnce<T, Result<R, E>>,
-    ) -> (ExecutionResult<R, E>, bool)
+    ) -> ExecutionResult<R, E>
     where
         E: Error + Send + Sync + 'static,
     {
@@ -489,41 +544,85 @@ where
             if let Some(ref logger) = self.logger {
                 logger.log_unmet_message();
             }
-            return (ExecutionResult::unmet(), false);
+            return ExecutionResult::unmet();
         }
 
         // Execute prepare action
-        let mut prepare_executed = false;
-        if let Some(prepare_action) = self.prepare_action.take() {
+        let prepare_completed = if let Some(prepare_action) = self.prepare_action.take() {
             if let Err(e) = prepare_action.get() {
                 if let Some(ref logger) = self.logger {
                     logger.log_prepare_failed(&e);
                 } else {
                     log::error!("Prepare action failed: {}", e);
                 }
-                return (ExecutionResult::prepare_failed(e), false);
+                return ExecutionResult::prepare_failed(e);
             }
-            prepare_executed = true;
-        }
+            true
+        } else {
+            false
+        };
 
         // Acquire lock and execute
-        let rollback_on_unmet = self.rollback_on_unmet;
-        self.lock.write(|data| {
+        let result = self.lock.write(|data| {
             // Second check (inside lock)
             if !tester.test() {
                 if let Some(ref logger) = self.logger {
                     logger.log_unmet_message();
                 }
-                return (
-                    ExecutionResult::unmet(),
-                    prepare_executed && rollback_on_unmet,
-                );
+                return ExecutionResult::unmet();
             }
             // Execute task
             match task.apply(data) {
-                Ok(v) => (ExecutionResult::success(v), false),
-                Err(e) => (ExecutionResult::task_failed(e), false),
+                Ok(v) => ExecutionResult::success(v),
+                Err(e) => ExecutionResult::task_failed(e),
             }
-        })
+        });
+        if prepare_completed {
+            self.finalize_prepare(result)
+        } else {
+            result
+        }
+    }
+
+    /// Commits or rolls back a successfully completed prepare action.
+    ///
+    /// This method is called after the read or write lock has been released. It
+    /// commits prepare when `result` is success, and rolls back prepare when
+    /// `result` is `ConditionNotMet` or `Failed`.
+    fn finalize_prepare<R, E>(mut self, mut result: ExecutionResult<R, E>) -> ExecutionResult<R, E>
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        if result.is_success() {
+            if let Some(commit_prepare_action) = self.commit_prepare_action.take() {
+                if let Err(e) = commit_prepare_action.get() {
+                    if let Some(ref logger) = self.logger {
+                        logger.log_prepare_commit_failed(&e);
+                    } else {
+                        log::error!("Prepare commit action failed: {}", e);
+                    }
+                    result = ExecutionResult::prepare_commit_failed(e);
+                }
+            }
+            return result;
+        }
+
+        let original = match &result {
+            ExecutionResult::ConditionNotMet => "Condition not met".to_string(),
+            ExecutionResult::Failed(error) => error.to_string(),
+            ExecutionResult::Success(_) => unreachable!("success handled above"),
+        };
+
+        if let Some(rollback_prepare_action) = self.rollback_prepare_action.take() {
+            if let Err(e) = rollback_prepare_action.get() {
+                if let Some(ref logger) = self.logger {
+                    logger.log_prepare_rollback_failed(&e);
+                } else {
+                    log::error!("Prepare rollback action failed: {}", e);
+                }
+                result = ExecutionResult::prepare_rollback_failed(original, e.to_string());
+            }
+        }
+        result
     }
 }

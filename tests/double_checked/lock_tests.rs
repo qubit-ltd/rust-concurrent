@@ -12,11 +12,7 @@ mod tests {
 
     use qubit_concurrent::{
         double_checked::DoubleCheckedLock,
-        lock::{
-            ArcRwLock,
-            ArcStdMutex,
-            Lock,
-        },
+        lock::{ArcRwLock, ArcStdMutex, Lock},
     };
 
     mod test_double_checked_lock_on {
@@ -184,16 +180,17 @@ mod tests {
         }
 
         #[test]
-        fn test_double_checked_lock_with_rollback() {
+        fn test_double_checked_lock_with_prepare_rollback() {
             let data = ArcStdMutex::new(42);
 
             let result = DoubleCheckedLock::on(&data)
                 .when(|| true)
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(|| Ok::<(), io::Error>(()))
                 .call_mut(|value: &mut i32| {
                     *value = 100;
                     Err::<i32, _>(io::Error::other("Task failed"))
                 })
-                .rollback(|| Ok::<(), io::Error>(()))
                 .get_result();
 
             assert!(!result.is_success());

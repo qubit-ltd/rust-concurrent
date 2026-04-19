@@ -8,12 +8,9 @@
  ******************************************************************************/
 #[cfg(test)]
 mod tests {
-    use qubit_concurrent::double_checked::{
-        ExecutionResult,
-        ExecutorError,
-    };
-    use qubit_concurrent::lock::ArcStdMutex;
     use qubit_concurrent::DoubleCheckedLock;
+    use qubit_concurrent::double_checked::{ExecutionResult, ExecutorError};
+    use qubit_concurrent::lock::ArcStdMutex;
 
     mod test_execution_result {
         use super::*;
@@ -191,9 +188,7 @@ mod tests {
             let data = ArcStdMutex::new(42);
             let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .call(|_value: &i32| {
-                    Err::<i32, _>(io::Error::other("Task failed"))
-                });
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("Task failed")));
 
             assert!(!context.is_success());
             assert!(matches!(context.peek_result(), ExecutionResult::Failed(_)));
@@ -203,65 +198,56 @@ mod tests {
         }
 
         #[test]
-        fn test_execution_context_rollback_on_failure() {
+        fn test_execution_context_rollback_prepare_on_task_failure() {
             let data = ArcStdMutex::new(42);
             let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .call(|_value: &i32| {
-                    Err::<i32, _>(io::Error::other("Task failed"))
-                })
-                .rollback(|| Ok::<(), io::Error>(()));
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(|| Ok::<(), io::Error>(()))
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("Task failed")));
 
             let final_result = context.get_result();
-            // Should still be failed since rollback succeeded
             assert!(matches!(final_result, ExecutionResult::Failed(_)));
         }
 
         #[test]
-        fn test_execution_context_rollback_fails() {
+        fn test_execution_context_rollback_prepare_fails() {
             let data = ArcStdMutex::new(42);
             let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .call(|_value: &i32| {
-                    Err::<i32, _>(io::Error::other("Task failed"))
-                })
-                .rollback(|| Err::<(), _>(io::Error::other("Rollback failed")));
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(|| Err::<(), _>(io::Error::other("Rollback failed")))
+                .call(|_value: &i32| Err::<i32, _>(io::Error::other("Task failed")));
 
             let final_result = context.get_result();
-            // Should be RollbackFailed
             assert!(matches!(
                 final_result,
-                ExecutionResult::Failed(ExecutorError::RollbackFailed { .. })
+                ExecutionResult::Failed(ExecutorError::PrepareRollbackFailed { .. })
             ));
         }
 
         #[test]
-        fn test_execution_context_no_rollback_on_success() {
+        fn test_execution_context_no_rollback_prepare_on_success() {
             let data = ArcStdMutex::new(42);
             let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .call(|value: &i32| Ok::<i32, io::Error>(*value))
-                .rollback(|| {
-                    Err::<(), _>(io::Error::other("Should not execute"))
-                });
+                .prepare(|| Ok::<(), io::Error>(()))
+                .rollback_prepare(|| Err::<(), _>(io::Error::other("Should not execute")))
+                .call(|value: &i32| Ok::<i32, io::Error>(*value));
 
             let final_result = context.get_result();
-            // Should still be success
             assert!(matches!(final_result, ExecutionResult::Success(42)));
         }
 
         #[test]
-        fn test_execution_context_no_rollback_on_condition_not_met() {
+        fn test_execution_context_no_rollback_prepare_without_prepare() {
             let data = ArcStdMutex::new(42);
             let context = DoubleCheckedLock::on(&data)
                 .when(|| false)
-                .call(|value: &i32| Ok::<i32, io::Error>(*value))
-                .rollback(|| {
-                    Err::<(), _>(io::Error::other("Should not execute"))
-                });
+                .rollback_prepare(|| Err::<(), _>(io::Error::other("Should not execute")))
+                .call(|value: &i32| Ok::<i32, io::Error>(*value));
 
             let final_result = context.get_result();
-            // Should still be condition not met
             assert!(matches!(final_result, ExecutionResult::ConditionNotMet));
         }
 
@@ -280,9 +266,7 @@ mod tests {
             let data = ArcStdMutex::new(());
             let context = DoubleCheckedLock::on(&data)
                 .when(|| true)
-                .execute(|_value: &()| {
-                    Err::<(), _>(io::Error::other("Task failed"))
-                });
+                .execute(|_value: &()| Err::<(), _>(io::Error::other("Task failed")));
 
             assert!(!context.finish());
         }

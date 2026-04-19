@@ -22,9 +22,14 @@ use tokio::task::{
 
 /// Future-backed execution returned by [`TokioExecutor`](super::TokioExecutor).
 ///
-/// This type resolves to the callable's own `Result<R, E>`. Tokio join errors
-/// are not part of that result type: task panics are resumed and cancellations
-/// panic when the future is awaited.
+/// This struct **implements [`Future`](std::future::Future)**:
+/// [`Output`](std::future::Future::Output) is [`Result<R, E>`](Result) — the
+/// success value `R` or the callable's error `E`. Await this type (on a
+/// Tokio-driven async context) to receive that result; until then the underlying
+/// blocking task may still be running.
+///
+/// Tokio join errors are not part of that `Result`: task panics are resumed and
+/// cancellations panic when the future is awaited.
 ///
 /// # Type Parameters
 ///

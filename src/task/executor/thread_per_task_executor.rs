@@ -6,10 +6,7 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-use std::{
-    sync::atomic::Ordering,
-    thread,
-};
+use std::thread;
 
 use qubit_function::Callable;
 
@@ -25,12 +22,42 @@ use super::Executor;
 /// This executor does not manage lifecycle or maintain a queue. Each accepted
 /// task receives a blocking [`TaskHandle`] that can be used to wait for the
 /// result.
+///
+/// # Semantics
+///
+/// * **One task, one thread** — each [`Executor::call`] or [`Executor::execute`]
+///   spawns a new [`std::thread::spawn`] worker. There is no pool and no
+///   submission queue.
+/// * **Blocking wait** — [`TaskHandle::get`] performs a blocking
+///   [`std::sync::mpsc::Receiver::recv`] on the calling thread. Do not call it
+///   from a Tokio async worker thread unless you offload with
+///   [`tokio::task::spawn_blocking`] or similar.
+/// * **Completion probe** — [`TaskHandle::is_done`] reads an atomic flag set
+///   after the worker sends the result; it does not retrieve the value (you
+///   still need [`TaskHandle::get`] for that).
+///
+/// # Examples
+///
+/// ```rust
+/// use std::io;
+///
+/// use qubit_concurrent::task::executor::{
+///     Executor,
+///     ThreadPerTaskExecutor,
+/// };
+///
+/// let executor = ThreadPerTaskExecutor;
+/// let handle = executor.call(|| Ok::<i32, io::Error>(40 + 2));
+///
+/// // Blocks the current thread until the spawned thread completes.
+/// let value = handle.get().expect("task should succeed");
+/// assert_eq!(value, 42);
+/// ```
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ThreadPerTaskExecutor;
 
 impl Executor for ThreadPerTaskExecutor {
-    type Execution<R, E>
-        = TaskHandle<R, E>
+    type Execution<R, E> = TaskHandle<R, E>
     where
         R: Send + 'static,
         E: Send + 'static;
@@ -46,7 +73,7 @@ impl Executor for ThreadPerTaskExecutor {
         thread::spawn(move || {
             let result = run_callable(task);
             let _ = sender.send(result);
-            done.store(true, Ordering::Release);
+            done.store(true);
         });
         handle
     }

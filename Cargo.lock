@@ -21,6 +21,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -415,6 +424,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qubit-atomic"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "127ff1cb90c59004fab20e5cf285921e877c653f5ae0d566e9500651e12c9268"
+dependencies = [
+ "arc-swap",
+]
+
+[[package]]
 name = "qubit-common"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -436,6 +454,7 @@ version = "0.4.0"
 dependencies = [
  "log",
  "parking_lot",
+ "qubit-atomic",
  "qubit-common",
  "qubit-function",
  "thiserror",

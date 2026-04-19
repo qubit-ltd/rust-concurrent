@@ -10,13 +10,13 @@ use std::sync::{
     Arc,
     Mutex,
     MutexGuard,
-    atomic::{
-        AtomicBool,
-        AtomicUsize,
-        Ordering,
-    },
+    atomic::Ordering,
 };
 
+use qubit_atomic::{
+    AtomicBool,
+    AtomicUsize,
+};
 use qubit_function::Callable;
 use tokio::{
     sync::Notify,
@@ -62,7 +62,7 @@ impl TokioExecutorServiceState {
 
     /// Wakes termination waiters when shutdown and task completion allow it.
     fn notify_if_terminated(&self) {
-        if self.shutdown.load(Ordering::Acquire) && self.active_tasks.load(Ordering::Acquire) == 0 {
+        if self.shutdown.load() && self.active_tasks.load() == 0 {
             self.terminated_notify.notify_waiters();
         }
     }
@@ -83,7 +83,13 @@ impl TokioServiceTaskGuard {
 impl Drop for TokioServiceTaskGuard {
     /// Updates service counters when a task completes or is aborted.
     fn drop(&mut self) {
-        if self.state.active_tasks.fetch_sub(1, Ordering::AcqRel) == 1 {
+        if self
+            .state
+            .active_tasks
+            .inner()
+            .fetch_sub(1, Ordering::AcqRel)
+            == 1
+        {
             self.state.notify_if_terminated();
         }
     }
@@ -131,10 +137,13 @@ impl ExecutorService for TokioExecutorService {
         E: Send + 'static,
     {
         let submission_guard = self.state.lock_submission();
-        if self.state.shutdown.load(Ordering::Acquire) {
+        if self.state.shutdown.load() {
             return Err(RejectedExecution::Shutdown);
         }
-        self.state.active_tasks.fetch_add(1, Ordering::AcqRel);
+        self.state
+            .active_tasks
+            .inner()
+            .fetch_add(1, Ordering::AcqRel);
         drop(submission_guard);
 
         let state = Arc::clone(&self.state);
@@ -153,15 +162,15 @@ impl ExecutorService for TokioExecutorService {
     /// Stops accepting new tasks.
     fn shutdown(&self) {
         let _guard = self.state.lock_submission();
-        self.state.shutdown.store(true, Ordering::Release);
+        self.state.shutdown.store(true);
         self.state.notify_if_terminated();
     }
 
     /// Stops accepting new tasks and aborts tracked Tokio tasks.
     fn shutdown_now(&self) -> ShutdownReport {
         let _guard = self.state.lock_submission();
-        self.state.shutdown.store(true, Ordering::Release);
-        let running = self.state.active_tasks.load(Ordering::Acquire);
+        self.state.shutdown.store(true);
+        let running = self.state.active_tasks.load();
         let mut handles = self.state.lock_abort_handles();
         let cancellation_count = handles.len();
         for handle in handles.drain(..) {
@@ -174,12 +183,12 @@ impl ExecutorService for TokioExecutorService {
 
     /// Returns whether shutdown has been requested.
     fn is_shutdown(&self) -> bool {
-        self.state.shutdown.load(Ordering::Acquire)
+        self.state.shutdown.load()
     }
 
     /// Returns whether shutdown was requested and all tasks are finished.
     fn is_terminated(&self) -> bool {
-        self.is_shutdown() && self.state.active_tasks.load(Ordering::Acquire) == 0
+        self.is_shutdown() && self.state.active_tasks.load() == 0
     }
 
     /// Waits until the service has terminated.

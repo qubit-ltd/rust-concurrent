@@ -8,16 +8,14 @@
  ******************************************************************************/
 use std::sync::{
     Arc,
-    atomic::{
-        AtomicBool,
-        Ordering,
-    },
     mpsc::{
         self,
         Receiver,
         Sender,
     },
 };
+
+use qubit_atomic::AtomicBool;
 
 use super::{
     TaskExecutionError,
@@ -83,7 +81,7 @@ impl<R, E> TaskHandle<R, E> {
     /// `true` after the task runner has produced or abandoned its final result.
     #[inline]
     pub fn is_done(&self) -> bool {
-        self.done.load(Ordering::Acquire)
+        self.done.load()
     }
 
     /// Attempts to cancel the task.

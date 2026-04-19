@@ -6,14 +6,16 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! # Error Types
+//! # Executor Error
 //!
-//! Provides error types for the double-checked lock executor.
+//! Provides executor error types for the double-checked lock executor.
 //!
 //! # Author
 //!
 //! Haixing Hu
-use thiserror::Error;
+
+use std::fmt;
+use std::error::Error;
 
 /// Executor error types
 ///
@@ -48,7 +50,7 @@ use thiserror::Error;
 #[derive(Debug)]
 pub enum ExecutorError<E>
 where
-    E: std::fmt::Display,
+    E: fmt::Display,
 {
     /// Task execution failed with original error
     TaskFailed(E),
@@ -68,11 +70,11 @@ where
     LockPoisoned(String),
 }
 
-impl<E> std::fmt::Display for ExecutorError<E>
+impl<E> fmt::Display for ExecutorError<E>
 where
-    E: std::fmt::Display,
+    E: fmt::Display,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExecutorError::TaskFailed(e) => {
                 write!(f, "Task execution failed: {}", e)
@@ -94,29 +96,4 @@ where
     }
 }
 
-impl<E> std::error::Error for ExecutorError<E> where E: std::fmt::Display + std::fmt::Debug {}
-
-/// Builder error types
-///
-/// Defines error conditions that can occur during executor builder
-/// construction, such as missing required parameters.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use qubit_concurrent::double_checked::BuilderError;
-///
-/// let error = BuilderError::MissingTester;
-/// println!("Builder error: {}", error);
-/// ```
-///
-/// # Author
-///
-/// Haixing Hu
-///
-#[derive(Debug, Error)]
-pub enum BuilderError {
-    /// Missing required tester parameter
-    #[error("Tester function is required")]
-    MissingTester,
-}
+impl<E> Error for ExecutorError<E> where E: fmt::Display + fmt::Debug {}

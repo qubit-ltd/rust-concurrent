@@ -30,19 +30,27 @@ use qubit_function::{
 };
 
 use super::{
-    states::{
-        Conditioned,
-        Configuring,
-        Initial,
-    },
     ExecutionContext,
+    ExecutionLogger,
     ExecutionResult,
-    LogConfig,
 };
-use crate::{
-    double_checked::error::ExecutorError,
-    lock::Lock,
-};
+use crate::lock::Lock;
+
+/// Initial typestate: builder just created; may call
+/// [`ExecutionBuilder::logger`] or [`ExecutionBuilder::when`].
+///
+/// This and the other state markers are public because they appear in the type
+/// parameters of [`ExecutionBuilder`] and related APIs; they carry no data at
+/// runtime.
+pub struct Initial;
+
+/// Configuring typestate: [`ExecutionBuilder::logger`] was called; may continue
+/// configuration or call [`ExecutionBuilder::when`].
+pub struct Configuring;
+
+/// Conditioned typestate: [`ExecutionBuilder::when`] was called; may call
+/// [`ExecutionBuilder::prepare`] or execute.
+pub struct Conditioned;
 
 /// Execution builder (using typestate pattern)
 ///
@@ -52,7 +60,7 @@ use crate::{
 /// # Type Parameters
 ///
 /// * `'a` - Lifetime of the lock
-/// * `L` - Lock type (implements the Lock<T> trait)
+/// * `L` - Lock type (implements the `Lock<T>` trait)
 /// * `T` - Type of data protected by the lock
 /// * `State` - Current state (Initial, Configuring, Conditioned)
 ///
@@ -67,7 +75,7 @@ where
     lock: &'a L,
 
     /// Optional logging configuration for execution events
-    logger: Option<LogConfig>,
+    logger: Option<ExecutionLogger>,
 
     /// Optional test condition that determines if execution should proceed
     tester: Option<BoxTester>,
@@ -126,10 +134,7 @@ where
         level: log::Level,
         message: &str,
     ) -> ExecutionBuilder<'a, L, T, Configuring> {
-        self.logger = Some(LogConfig {
-            level,
-            message: message.to_string(),
-        });
+        self.logger = Some(ExecutionLogger::new(level, message));
         ExecutionBuilder {
             lock: self.lock,
             logger: self.logger,
@@ -201,10 +206,7 @@ where
     /// * `message` - Log message
     #[inline]
     pub fn logger(mut self, level: log::Level, message: &str) -> Self {
-        self.logger = Some(LogConfig {
-            level,
-            message: message.to_string(),
-        });
+        self.logger = Some(ExecutionLogger::new(level, message));
         self
     }
 
@@ -313,7 +315,7 @@ where
     ///
     /// # State Transition
     ///
-    /// Conditioned → ExecutionContext<R>
+    /// Conditioned → `ExecutionContext<R>`
     ///
     /// # Arguments
     ///
@@ -326,15 +328,16 @@ where
         R: 'static,
     {
         let task_boxed = task.into_box();
+        let logger = self.logger.clone();
         let (result, rollback_on_unmet) = self.execute_with_read_lock(task_boxed);
-        ExecutionContext::new_with_unmet_policy(result, rollback_on_unmet)
+        ExecutionContext::new(result, rollback_on_unmet, logger)
     }
 
     /// Executes a read-write task (with return value)
     ///
     /// # State Transition
     ///
-    /// Conditioned → ExecutionContext<R>
+    /// Conditioned → `ExecutionContext<R>`
     ///
     /// # Arguments
     ///
@@ -348,11 +351,17 @@ where
         R: 'static,
     {
         let task_boxed = task.into_box();
+        let logger = self.logger.clone();
         let (result, rollback_on_unmet) = self.execute_with_write_lock(task_boxed);
-        ExecutionContext::new_with_unmet_policy(result, rollback_on_unmet)
+        ExecutionContext::new(result, rollback_on_unmet, logger)
     }
 
     /// Executes a read-only task (without return value)
+    ///
+    /// # Execution Flow
+    ///
+    /// Same as [`Self::call`]: outer check, optional prepare, lock, inner
+    /// check, then task.
     ///
     /// # Arguments
     ///
@@ -367,6 +376,11 @@ where
     }
 
     /// Executes a read-write task (without return value)
+    ///
+    /// # Execution Flow
+    ///
+    /// Same as [`Self::call_mut`]: outer check, optional prepare, lock, inner
+    /// check, then task.
     ///
     /// # Arguments
     ///
@@ -385,6 +399,18 @@ where
     // Internal helper methods
     // ========================================================================
 
+    /// Runs the configured double-checked sequence under a **read** lock.
+    ///
+    /// Steps: first `tester` check (outside lock); optional logging if unmet;
+    /// optional prepare; [`Lock::read`]; second `tester` check (inside lock);
+    /// then `task` on shared data.
+    ///
+    /// # Returns
+    ///
+    /// `(result, rollback_if_unmet)`. The boolean is `true` only when prepare
+    /// completed successfully, the inner check fails, and
+    /// [`Self::rollback_on_unmet`] is enabled;
+    /// it is passed to [`ExecutionContext::new`].
     fn execute_with_read_lock<R, E>(
         mut self,
         task: BoxFunctionOnce<T, Result<R, E>>,
@@ -398,23 +424,24 @@ where
             .take()
             .expect("Tester must be set in Conditioned state");
         if !tester.test() {
-            if let Some(ref log_config) = self.logger {
-                log::log!(log_config.level, "{}", log_config.message);
+            if let Some(ref logger) = self.logger {
+                logger.log_unmet_message();
             }
-            return (ExecutionResult::ConditionNotMet, false);
+            return (ExecutionResult::unmet(), false);
         }
 
         // Execute prepare action
         let mut prepare_executed = false;
         if let Some(prepare_action) = self.prepare_action.take() {
-            prepare_executed = true;
             if let Err(e) = prepare_action.get() {
-                log::error!("Prepare action failed: {}", e);
-                return (
-                    ExecutionResult::Failed(ExecutorError::PrepareFailed(e.to_string())),
-                    false,
-                );
+                if let Some(ref logger) = self.logger {
+                    logger.log_prepare_failed(&e);
+                } else {
+                    log::error!("Prepare action failed: {}", e);
+                }
+                return (ExecutionResult::prepare_failed(e), false);
             }
+            prepare_executed = true;
         }
 
         // Acquire lock and execute
@@ -422,22 +449,30 @@ where
         self.lock.read(|data| {
             // Second check (inside lock)
             if !tester.test() {
-                if let Some(ref log_config) = self.logger {
-                    log::log!(log_config.level, "{}", log_config.message);
+                if let Some(ref logger) = self.logger {
+                    logger.log_unmet_message();
                 }
                 return (
-                    ExecutionResult::ConditionNotMet,
+                    ExecutionResult::unmet(),
                     prepare_executed && rollback_on_unmet,
                 );
             }
             // Execute task
             match task.apply(data) {
-                Ok(v) => (ExecutionResult::Success(v), false),
-                Err(e) => (ExecutionResult::Failed(ExecutorError::TaskFailed(e)), false),
+                Ok(v) => (ExecutionResult::success(v), false),
+                Err(e) => (ExecutionResult::task_failed(e), false),
             }
         })
     }
 
+    /// Runs the configured double-checked sequence under a **write** lock.
+    ///
+    /// Same ordering as [`Self::execute_with_read_lock`], but uses
+    /// [`Lock::write`] so the task may mutate `T`.
+    ///
+    /// # Returns
+    ///
+    /// Same tuple semantics as [`Self::execute_with_read_lock`].
     fn execute_with_write_lock<R, E>(
         mut self,
         task: BoxMutatingFunctionOnce<T, Result<R, E>>,
@@ -451,23 +486,24 @@ where
             .take()
             .expect("Tester must be set in Conditioned state");
         if !tester.test() {
-            if let Some(ref log_config) = self.logger {
-                log::log!(log_config.level, "{}", log_config.message);
+            if let Some(ref logger) = self.logger {
+                logger.log_unmet_message();
             }
-            return (ExecutionResult::ConditionNotMet, false);
+            return (ExecutionResult::unmet(), false);
         }
 
         // Execute prepare action
         let mut prepare_executed = false;
         if let Some(prepare_action) = self.prepare_action.take() {
-            prepare_executed = true;
             if let Err(e) = prepare_action.get() {
-                log::error!("Prepare action failed: {}", e);
-                return (
-                    ExecutionResult::Failed(ExecutorError::PrepareFailed(e.to_string())),
-                    false,
-                );
+                if let Some(ref logger) = self.logger {
+                    logger.log_prepare_failed(&e);
+                } else {
+                    log::error!("Prepare action failed: {}", e);
+                }
+                return (ExecutionResult::prepare_failed(e), false);
             }
+            prepare_executed = true;
         }
 
         // Acquire lock and execute
@@ -475,18 +511,18 @@ where
         self.lock.write(|data| {
             // Second check (inside lock)
             if !tester.test() {
-                if let Some(ref log_config) = self.logger {
-                    log::log!(log_config.level, "{}", log_config.message);
+                if let Some(ref logger) = self.logger {
+                    logger.log_unmet_message();
                 }
                 return (
-                    ExecutionResult::ConditionNotMet,
+                    ExecutionResult::unmet(),
                     prepare_executed && rollback_on_unmet,
                 );
             }
             // Execute task
             match task.apply(data) {
-                Ok(v) => (ExecutionResult::Success(v), false),
-                Err(e) => (ExecutionResult::Failed(ExecutorError::TaskFailed(e)), false),
+                Ok(v) => (ExecutionResult::success(v), false),
+                Err(e) => (ExecutionResult::task_failed(e), false),
             }
         })
     }

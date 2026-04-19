@@ -9,68 +9,56 @@
 #[cfg(test)]
 mod tests {
     use qubit_concurrent::double_checked::{
+        ExecutionLogger,
         ExecutorConfig,
-        LogConfig,
     };
 
-    mod test_log_config {
+    mod test_execution_logger {
         use super::*;
 
         #[test]
-        fn test_log_config_creation() {
-            let config = LogConfig {
-                level: log::Level::Info,
-                message: "Test message".to_string(),
-            };
+        fn test_execution_logger_creation() {
+            let logger = ExecutionLogger::new(log::Level::Info, "Test message");
 
-            assert_eq!(config.level, log::Level::Info);
-            assert_eq!(config.message, "Test message");
+            assert!(logger.enabled);
+            assert_eq!(logger.level, log::Level::Info);
+            assert_eq!(logger.unmet_message, "Test message");
+            assert_eq!(logger.prepare_failed_message, "Prepare action failed");
+            assert_eq!(logger.rollback_failed_message, "Rollback action failed");
         }
 
         #[test]
-        fn test_log_config_debug() {
-            let config = LogConfig {
-                level: log::Level::Warn,
-                message: "Warning message".to_string(),
-            };
+        fn test_execution_logger_debug() {
+            let logger = ExecutionLogger::new(log::Level::Warn, "Warning message");
 
-            let debug_str = format!("{:?}", config);
-            assert!(debug_str.contains("LogConfig"));
+            let debug_str = format!("{:?}", logger);
+            assert!(debug_str.contains("ExecutionLogger"));
             assert!(debug_str.contains("Warn"));
             assert!(debug_str.contains("Warning message"));
         }
 
         #[test]
-        fn test_log_config_clone() {
-            let config = LogConfig {
-                level: log::Level::Error,
-                message: "Error occurred".to_string(),
-            };
+        fn test_execution_logger_clone() {
+            let logger = ExecutionLogger::new(log::Level::Error, "Error occurred");
 
-            let cloned = config.clone();
-            assert_eq!(cloned.level, config.level);
-            assert_eq!(cloned.message, config.message);
+            let cloned = logger.clone();
+            assert_eq!(cloned.level, logger.level);
+            assert_eq!(cloned.unmet_message, logger.unmet_message);
         }
 
         #[test]
-        fn test_log_config_with_empty_message() {
-            let config = LogConfig {
-                level: log::Level::Debug,
-                message: String::new(),
-            };
+        fn test_execution_logger_with_empty_message() {
+            let logger = ExecutionLogger::new(log::Level::Debug, "");
 
-            assert_eq!(config.level, log::Level::Debug);
-            assert!(config.message.is_empty());
+            assert_eq!(logger.level, log::Level::Debug);
+            assert!(logger.unmet_message.is_empty());
         }
 
         #[test]
-        fn test_log_config_with_unicode_message() {
-            let config = LogConfig {
-                level: log::Level::Info,
-                message: "测试消息 🚀".to_string(),
-            };
+        fn test_execution_logger_with_unicode_message() {
+            let logger = ExecutionLogger::new(log::Level::Info, "测试消息 🚀");
 
-            assert_eq!(config.message, "测试消息 🚀");
+            assert_eq!(logger.unmet_message, "测试消息 🚀");
         }
     }
 

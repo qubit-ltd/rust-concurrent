@@ -6,9 +6,9 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! # Execution Result
+//! # Execution Context
 //!
-//! Provides result types for task execution outcomes.
+//! Provides execution context after double-checked lock task execution.
 //!
 //! # Author
 //!
@@ -20,104 +20,10 @@ use qubit_function::{
     SupplierOnce,
 };
 
-use crate::double_checked::error::ExecutorError;
-
-/// Task execution result
-///
-/// Represents the result of executing a task using an enum to clearly distinguish
-/// between success, unmet conditions, and failure.
-///
-/// # Type Parameters
-///
-/// * `T` - The type of the return value when execution succeeds
-/// * `E` - The type of the error when execution fails
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use qubit_concurrent::double_checked::{ExecutionResult, ExecutorError};
-///
-/// let success: ExecutionResult<i32, String> = ExecutionResult::Success(42);
-/// if let ExecutionResult::Success(val) = success {
-///     println!("Value: {}", val);
-/// }
-///
-/// let unmet: ExecutionResult<i32, String> = ExecutionResult::ConditionNotMet;
-///
-/// let failed: ExecutionResult<i32, String> =
-///     ExecutionResult::Failed(ExecutorError::TaskFailed("Task failed".to_string()));
-/// ```
-///
-/// # Author
-///
-/// Haixing Hu
-#[derive(Debug)]
-pub enum ExecutionResult<T, E>
-where
-    E: std::fmt::Display,
-{
-    /// Execution succeeded with a value
-    Success(T),
-
-    /// Double-checked locking condition was not met
-    ConditionNotMet,
-
-    /// Execution failed with an error
-    Failed(ExecutorError<E>),
-}
-
-impl<T, E> ExecutionResult<T, E>
-where
-    E: std::fmt::Display,
-{
-    /// Checks if the execution was successful
-    #[inline]
-    pub fn is_success(&self) -> bool {
-        matches!(self, ExecutionResult::Success(_))
-    }
-
-    /// Checks if the condition was not met
-    #[inline]
-    pub fn is_unmet(&self) -> bool {
-        matches!(self, ExecutionResult::ConditionNotMet)
-    }
-
-    /// Checks if the execution failed
-    #[inline]
-    pub fn is_failed(&self) -> bool {
-        matches!(self, ExecutionResult::Failed(_))
-    }
-
-    /// Unwraps the success value, panicking if not successful
-    #[inline]
-    pub fn unwrap(self) -> T {
-        match self {
-            ExecutionResult::Success(v) => v,
-            ExecutionResult::ConditionNotMet => {
-                panic!("Called unwrap on ExecutionResult::ConditionNotMet")
-            }
-            ExecutionResult::Failed(e) => {
-                panic!("Called unwrap on ExecutionResult::Failed: {}", e)
-            }
-        }
-    }
-
-    /// Converts the result to a standard Result
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Some(T))` - If execution was successful
-    /// * `Ok(None)` - If condition was not met
-    /// * `Err(ExecutorError<E>)` - If execution failed
-    #[inline]
-    pub fn into_result(self) -> Result<Option<T>, ExecutorError<E>> {
-        match self {
-            ExecutionResult::Success(v) => Ok(Some(v)),
-            ExecutionResult::ConditionNotMet => Ok(None),
-            ExecutionResult::Failed(e) => Err(e),
-        }
-    }
-}
+use crate::double_checked::{
+    execution_result::ExecutionResult,
+    ExecutionLogger,
+};
 
 /// Execution context (state after task execution)
 ///
@@ -140,6 +46,7 @@ where
     result: ExecutionResult<T, E>,
     rollback_action: Option<BoxSupplierOnce<Result<(), Box<dyn Error + Send + Sync>>>>,
     rollback_on_unmet: bool,
+    logger: Option<ExecutionLogger>,
 }
 
 impl<T, E> ExecutionContext<T, E>
@@ -153,15 +60,18 @@ where
     /// * `result` - The execution result
     /// * `rollback_on_unmet` - Whether rollback should run when result is
     ///   `ConditionNotMet`
+    /// * `logger` - Optional execution logger (used for rollback failure lines)
     #[inline]
-    pub(super) fn new_with_unmet_policy(
+    pub(super) fn new(
         result: ExecutionResult<T, E>,
         rollback_on_unmet: bool,
+        logger: Option<ExecutionLogger>,
     ) -> Self {
         Self {
             result,
             rollback_action: None,
             rollback_on_unmet,
+            logger,
         }
     }
 
@@ -211,11 +121,15 @@ where
             };
             if let (Some(rollback_action), Some(original)) = (self.rollback_action.take(), original) {
                 if let Err(rollback_error) = rollback_action.get() {
-                    log::error!("Rollback action failed: {}", rollback_error);
-                    self.result = ExecutionResult::Failed(ExecutorError::RollbackFailed {
+                    if let Some(ref log) = self.logger {
+                        log.log_rollback_failed(&rollback_error);
+                    } else {
+                        log::error!("Rollback action failed: {}", rollback_error);
+                    }
+                    self.result = ExecutionResult::rollback_failed(
                         original,
-                        rollback: rollback_error.to_string(),
-                    });
+                        rollback_error.to_string(),
+                    );
                 }
             }
         }

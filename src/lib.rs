@@ -20,9 +20,9 @@ pub use double_checked::{
     DoubleCheckedLock,
     ExecutionBuilder,
     ExecutionContext,
+    ExecutionLogger,
     ExecutionResult,
     ExecutorError,
-    LogConfig,
 };
 pub use executor::{
     AsyncExecutor,

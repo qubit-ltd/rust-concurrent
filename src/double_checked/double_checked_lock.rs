@@ -14,10 +14,7 @@
 //! # Author
 //!
 //! Haixing Hu
-use super::{
-    states::Initial,
-    ExecutionBuilder,
-};
+use super::execution_builder::{ExecutionBuilder, Initial};
 use crate::lock::Lock;
 
 /// The entry point for the fluent API of the double-checked locking
@@ -127,6 +124,31 @@ use crate::lock::Lock;
 ///
 /// assert!(result.is_failed());
 /// ```
+///
+/// ## Optional logging
+///
+/// Call [`ExecutionBuilder::logger`] before [`ExecutionBuilder::when`] to emit
+/// a message at the given [`log::Level`] when the test condition is **false**
+/// on the fast path (outside the lock) or the slow path (inside the lock).
+///
+/// ```rust
+/// use log::Level;
+/// use qubit_concurrent::{DoubleCheckedLock, ArcMutex, lock::Lock};
+///
+/// let data = ArcMutex::new(42);
+///
+/// let result = DoubleCheckedLock::on(&data)
+///     .logger(Level::Info, "condition not met; skipping read")
+///     .when(|| false)
+///     .call(|value: &i32| Ok::<i32, std::io::Error>(*value))
+///     .get_result();
+///
+/// assert!(result.is_unmet());
+/// ```
+///
+/// After the first [`ExecutionBuilder::logger`] call, the builder is in the
+/// configuring state; you may call [`ExecutionBuilder::logger`] again to
+/// override level or message before [`ExecutionBuilder::when`].
 ///
 /// ## Basic Usage - Lazy Initialization
 ///
@@ -312,10 +334,31 @@ impl DoubleCheckedLock {
     ///     .get_result();
     ///
     /// assert!(result.is_success());
-    /// assert_eq!(result.unwrap(), 1);
-    /// ```
-    ///
-    /// # Type Parameters
+/// assert_eq!(result.unwrap(), 1);
+/// ```
+///
+/// ## Optional logging
+///
+/// ```rust
+/// use log::Level;
+/// use qubit_concurrent::{DoubleCheckedLock, ArcMutex, lock::Lock};
+///
+/// let data = ArcMutex::new(0);
+///
+/// let result = DoubleCheckedLock::on(&data)
+///     .logger(Level::Debug, "skip: tester returned false")
+///     .when(|| false)
+///     .call_mut(|value: &mut i32| {
+///         *value += 1;
+///         Ok::<i32, std::io::Error>(*value)
+///     })
+///     .get_result();
+///
+/// assert!(result.is_unmet());
+/// assert_eq!(data.read(|v| *v), 0);
+/// ```
+///
+/// # Type Parameters
     ///
     /// * `'a` - The lifetime parameter for the lock reference
     /// * `L` - The lock type that must implement the `Lock<T>` trait

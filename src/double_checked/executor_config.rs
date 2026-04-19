@@ -6,43 +6,13 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-//! # Configuration Types
+//! # Executor Configuration
 //!
-//! Provides configuration structures for the double-checked lock executor.
+//! Provides executor configuration for the double-checked lock executor.
 //!
 //! # Author
 //!
 //! Haixing Hu
-
-/// Log configuration
-///
-/// Configures logging behavior for the executor, including log level
-/// and message content.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use log::Level;
-/// use qubit_concurrent::double_checked::LogConfig;
-///
-/// let config = LogConfig {
-///     level: Level::Info,
-///     message: "Service is not running".to_string(),
-/// };
-/// ```
-///
-/// # Author
-///
-/// Haixing Hu
-///
-#[derive(Debug, Clone)]
-pub struct LogConfig {
-    /// Log level for the message
-    pub level: log::Level,
-
-    /// Log message content
-    pub message: String,
-}
 
 /// Executor configuration
 ///
@@ -53,12 +23,9 @@ pub struct LogConfig {
 ///
 /// ```rust,ignore
 /// use log::Level;
-/// use qubit_concurrent::double_checked::{ExecutorConfig, LogConfig};
+/// use qubit_concurrent::double_checked::{ExecutionLogger, ExecutorConfig};
 ///
-/// let log_config = LogConfig {
-///     level: Level::Warn,
-///     message: "Service is not running".to_string(),
-/// };
+/// let _logger = ExecutionLogger::new(Level::Warn, "Service is not running");
 /// ```
 ///
 /// # Author

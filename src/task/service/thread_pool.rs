@@ -239,10 +239,10 @@ impl ThreadPool {
 
     /// Submits an already type-erased pool job.
     ///
-    /// This is crate-internal so higher-level services can attach their own
-    /// lifecycle callbacks without exposing the raw queue representation as
-    /// public API.
-    pub(crate) fn submit_job(&self, job: PoolJob) -> Result<(), RejectedExecution> {
+    /// This low-level hook is intended for higher-level service crates that
+    /// need to attach their own lifecycle callbacks while still using this
+    /// pool's queueing, cancellation, and shutdown behavior.
+    pub fn submit_job(&self, job: PoolJob) -> Result<(), RejectedExecution> {
         self.inner.submit(job)
     }
 }
@@ -1035,14 +1035,28 @@ impl ThreadPoolLifecycle {
 }
 
 /// Type-erased pool job with a cancellation path for queued work.
-pub(crate) struct PoolJob {
+///
+/// `PoolJob` is a low-level extension point for building custom services on
+/// top of [`ThreadPool`]. The pool calls the run callback after a worker takes
+/// the job, or the cancel callback if the job is still queued during immediate
+/// shutdown.
+pub struct PoolJob {
     run: Option<Box<dyn FnOnce() + Send + 'static>>,
     cancel: Option<Box<dyn FnOnce() + Send + 'static>>,
 }
 
 impl PoolJob {
     /// Creates a pool job from run and cancel callbacks.
-    pub(crate) fn new(
+    ///
+    /// # Parameters
+    ///
+    /// * `run` - Callback executed once a worker starts this job.
+    /// * `cancel` - Callback executed if this job is cancelled while queued.
+    ///
+    /// # Returns
+    ///
+    /// A type-erased job accepted by [`ThreadPool::submit_job`].
+    pub fn new(
         run: Box<dyn FnOnce() + Send + 'static>,
         cancel: Box<dyn FnOnce() + Send + 'static>,
     ) -> Self {

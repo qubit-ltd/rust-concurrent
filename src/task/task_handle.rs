@@ -58,8 +58,13 @@ struct TaskHandleState<R, E> {
     waker: Option<Waker>,
 }
 
-/// Completion endpoint owned by the task runner.
-pub(crate) struct TaskCompletion<R, E> {
+/// Completion endpoint owned by a task runner.
+///
+/// This low-level endpoint is exposed so custom executor services built on top
+/// of `qubit-concurrent` can wire their own scheduling and cancellation hooks
+/// while still returning the standard [`TaskHandle`]. Normal callers should use
+/// [`TaskHandle`] and executor/service submission methods instead.
+pub struct TaskCompletion<R, E> {
     inner: Arc<TaskHandleInner<R, E>>,
 }
 
@@ -69,7 +74,7 @@ impl<R, E> TaskHandle<R, E> {
     /// # Returns
     ///
     /// A handle for the caller and a completion endpoint for the runner.
-    pub(crate) fn completion_pair() -> (Self, TaskCompletion<R, E>) {
+    pub fn completion_pair() -> (Self, TaskCompletion<R, E>) {
         let inner = Arc::new(TaskHandleInner {
             state: Monitor::new(TaskHandleState {
                 result: None,
@@ -184,7 +189,7 @@ impl<R, E> TaskCompletion<R, E> {
     ///
     /// `true` if the runner should execute the task, or `false` if the task was
     /// already completed through cancellation.
-    pub(crate) fn start(&self) -> bool {
+    pub fn start(&self) -> bool {
         self.inner.state.write(|state| {
             if state.completed {
                 false
@@ -198,7 +203,7 @@ impl<R, E> TaskCompletion<R, E> {
     /// Completes the task with its final result.
     ///
     /// If another path has already completed the task, this result is ignored.
-    pub(crate) fn complete(&self, result: TaskResult<R, E>) {
+    pub fn complete(&self, result: TaskResult<R, E>) {
         self.finish(result, |_| true);
     }
 
@@ -208,7 +213,7 @@ impl<R, E> TaskCompletion<R, E> {
     ///
     /// `true` if this call published a cancellation result, or `false` if the
     /// task was already started or completed.
-    pub(crate) fn cancel(&self) -> bool {
+    pub fn cancel(&self) -> bool {
         self.finish(Err(TaskExecutionError::Cancelled), |state| !state.started)
     }
 

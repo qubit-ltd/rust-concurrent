@@ -612,10 +612,10 @@ where
             return result;
         }
 
-        let original = match &result {
-            ExecutionResult::ConditionNotMet => "Condition not met".to_string(),
-            ExecutionResult::Failed(error) => error.to_string(),
-            ExecutionResult::Success(_) => unreachable!("success handled above"),
+        let original = if let ExecutionResult::Failed(error) = &result {
+            error.to_string()
+        } else {
+            "Condition not met".to_string()
         };
 
         if let Some(rollback_prepare_action) = self.rollback_prepare_action.take()

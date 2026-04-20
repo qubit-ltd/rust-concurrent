@@ -146,6 +146,24 @@ mod tests {
             let result = ExecutionResult::<(), String>::ConditionNotMet;
             assert!(result.is_unmet());
         }
+
+        #[test]
+        fn test_execution_result_failure_constructors() {
+            let lock_result = ExecutionResult::<(), String>::lock_poisoned("poisoned lock");
+            assert!(matches!(
+                lock_result,
+                ExecutionResult::Failed(ExecutorError::LockPoisoned(message))
+                    if message == "poisoned lock"
+            ));
+
+            let error = ExecutorError::TaskFailed("task failed".to_string());
+            let task_result = ExecutionResult::<(), String>::from_executor_error(error);
+            assert!(matches!(
+                task_result,
+                ExecutionResult::Failed(ExecutorError::TaskFailed(message))
+                    if message == "task failed"
+            ));
+        }
     }
 
     mod test_execution_context {

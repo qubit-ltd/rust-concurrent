@@ -67,6 +67,17 @@ mod tests {
 
             assert_eq!(logger.unmet_message, "测试消息 🚀");
         }
+
+        #[test]
+        fn test_disabled_execution_logger_skips_all_log_methods() {
+            let mut logger = ExecutionLogger::new(log::Level::Info, "disabled");
+            logger.enabled = false;
+
+            logger.log_unmet_message();
+            logger.log_prepare_failed("prepare");
+            logger.log_prepare_commit_failed("commit");
+            logger.log_prepare_rollback_failed("rollback");
+        }
     }
 
     mod test_executor_config {

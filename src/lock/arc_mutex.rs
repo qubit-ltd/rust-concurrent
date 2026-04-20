@@ -47,10 +47,8 @@ use crate::lock::{
 ///
 /// ```rust
 /// use qubit_concurrent::lock::{ArcMutex, Lock};
-/// use std::sync::Arc;
 ///
 /// let counter = ArcMutex::new(0);
-/// let counter = Arc::new(counter);
 ///
 /// // Synchronously modify data
 /// counter.write(|c| {
@@ -59,7 +57,7 @@ use crate::lock::{
 /// });
 ///
 /// // Try to acquire lock
-/// if let Some(value) = counter.try_read(|c| *c) {
+/// if let Ok(value) = counter.try_read(|c| *c) {
 ///     println!("Current value: {}", value);
 /// }
 /// ```

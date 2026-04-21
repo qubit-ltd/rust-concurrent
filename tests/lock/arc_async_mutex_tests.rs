@@ -22,6 +22,15 @@ use qubit_concurrent::{
 mod arc_async_mutex_tests {
     use super::*;
 
+    fn read_i32(value: &i32) -> i32 {
+        *value
+    }
+
+    fn increment_i32(value: &mut i32) -> i32 {
+        *value += 1;
+        *value
+    }
+
     #[tokio::test]
     async fn test_arc_async_mutex_new() {
         let async_mutex = ArcAsyncMutex::new(42);
@@ -332,6 +341,34 @@ mod arc_async_mutex_tests {
             *value
         });
         assert_eq!(result, Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_arc_async_mutex_try_methods_cover_shared_function_pointer_paths() {
+        let async_mutex = Arc::new(ArcAsyncMutex::new(0));
+
+        assert_eq!(async_mutex.try_read(read_i32), Some(0));
+        assert_eq!(async_mutex.try_write(increment_i32), Some(1));
+
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let lock_clone = async_mutex.clone();
+        let barrier_clone = barrier.clone();
+        let holder = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                lock_clone
+                    .write(|_| {
+                        barrier_clone.wait();
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    })
+                    .await;
+            });
+        });
+
+        barrier.wait();
+        assert_eq!(async_mutex.try_read(read_i32), None);
+        assert_eq!(async_mutex.try_write(increment_i32), None);
+        holder.join().unwrap();
     }
 
     #[tokio::test]

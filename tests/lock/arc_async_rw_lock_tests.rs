@@ -22,6 +22,15 @@ use qubit_concurrent::{
 mod arc_async_rw_lock_tests {
     use super::*;
 
+    fn read_i32(value: &i32) -> i32 {
+        *value
+    }
+
+    fn increment_i32(value: &mut i32) -> i32 {
+        *value += 1;
+        *value
+    }
+
     #[tokio::test]
     async fn test_arc_async_rw_lock_new() {
         let async_rw_lock = ArcAsyncRwLock::new(42);
@@ -401,6 +410,50 @@ mod arc_async_rw_lock_tests {
         );
 
         handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_arc_async_rw_lock_try_methods_cover_shared_function_pointer_paths() {
+        let async_rw_lock = Arc::new(ArcAsyncRwLock::new(0));
+
+        assert_eq!(async_rw_lock.try_read(read_i32), Some(0));
+        assert_eq!(async_rw_lock.try_write(increment_i32), Some(1));
+
+        let read_barrier = Arc::new(std::sync::Barrier::new(2));
+        let read_lock = async_rw_lock.clone();
+        let read_barrier_clone = read_barrier.clone();
+        let read_holder = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                read_lock
+                    .write(|_| {
+                        read_barrier_clone.wait();
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    })
+                    .await;
+            });
+        });
+        read_barrier.wait();
+        assert_eq!(async_rw_lock.try_read(read_i32), None);
+        read_holder.join().unwrap();
+
+        let write_barrier = Arc::new(std::sync::Barrier::new(2));
+        let write_lock = async_rw_lock.clone();
+        let write_barrier_clone = write_barrier.clone();
+        let write_holder = std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                write_lock
+                    .read(|_| {
+                        write_barrier_clone.wait();
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    })
+                    .await;
+            });
+        });
+        write_barrier.wait();
+        assert_eq!(async_rw_lock.try_write(increment_i32), None);
+        write_holder.join().unwrap();
     }
 
     #[tokio::test]

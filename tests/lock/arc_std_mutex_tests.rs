@@ -29,6 +29,15 @@ use qubit_concurrent::{
 mod arc_std_mutex_tests {
     use super::*;
 
+    fn read_i32(value: &i32) -> i32 {
+        *value
+    }
+
+    fn increment_i32(value: &mut i32) -> i32 {
+        *value += 1;
+        *value
+    }
+
     #[test]
     fn test_arc_mutex_new() {
         let mutex = ArcStdMutex::new(42);
@@ -192,6 +201,47 @@ mod arc_std_mutex_tests {
         // Try to acquire poisoned lock, should return Poisoned
         let result = mutex.try_read(|value| *value);
         assert_eq!(result, Err(TryLockError::Poisoned));
+    }
+
+    #[test]
+    fn test_arc_mutex_try_methods_cover_shared_function_pointer_paths() {
+        let mutex = Arc::new(ArcStdMutex::new(0));
+
+        assert_eq!(mutex.try_read(read_i32), Ok(0));
+        assert_eq!(mutex.try_write(increment_i32), Ok(1));
+
+        let barrier = Arc::new(Barrier::new(2));
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+        let holder = thread::spawn(move || {
+            mutex_clone.write(|_| {
+                barrier_clone.wait();
+                thread::sleep(std::time::Duration::from_millis(50));
+            });
+        });
+        barrier.wait();
+        assert_eq!(mutex.try_read(read_i32), Err(TryLockError::WouldBlock));
+        assert_eq!(
+            mutex.try_write(increment_i32),
+            Err(TryLockError::WouldBlock),
+        );
+        holder.join().unwrap();
+
+        let poisoned = Arc::new(ArcStdMutex::new(0));
+        let poisoned_clone = poisoned.clone();
+        let handle = thread::spawn(move || {
+            poisoned_clone.write(|value| {
+                *value += 1;
+                panic!("intentional panic to poison the lock");
+            });
+        });
+        let _ = handle.join();
+
+        assert_eq!(poisoned.try_read(read_i32), Err(TryLockError::Poisoned));
+        assert_eq!(
+            poisoned.try_write(increment_i32),
+            Err(TryLockError::Poisoned),
+        );
     }
 
     #[test]

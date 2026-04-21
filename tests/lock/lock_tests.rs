@@ -30,6 +30,15 @@ use qubit_concurrent::lock::{
     TryLockError,
 };
 
+fn read_i32(value: &i32) -> i32 {
+    *value
+}
+
+fn increment_i32(value: &mut i32) -> i32 {
+    *value += 1;
+    *value
+}
+
 #[cfg(test)]
 mod lock_trait_tests {
     use super::*;
@@ -387,6 +396,51 @@ mod lock_trait_tests {
 
         let result = Lock::try_write(&*mutex, |value| *value);
         assert_eq!(result, Err(TryLockError::Poisoned));
+    }
+
+    #[test]
+    fn test_std_mutex_try_methods_cover_shared_function_pointer_paths() {
+        let mutex = Arc::new(Mutex::new(0));
+
+        assert_eq!(Lock::try_read(&*mutex, read_i32), Ok(0));
+        assert_eq!(Lock::try_write(&*mutex, increment_i32), Ok(1));
+
+        let barrier = Arc::new(Barrier::new(2));
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+        let handle = thread::spawn(move || {
+            let _guard = mutex_clone.lock().unwrap();
+            barrier_clone.wait();
+            thread::sleep(std::time::Duration::from_millis(50));
+        });
+        barrier.wait();
+        assert_eq!(
+            Lock::try_read(&*mutex, read_i32),
+            Err(TryLockError::WouldBlock)
+        );
+        assert_eq!(
+            Lock::try_write(&*mutex, increment_i32),
+            Err(TryLockError::WouldBlock),
+        );
+        handle.join().unwrap();
+
+        let poisoned = Arc::new(Mutex::new(0));
+        let poisoned_clone = poisoned.clone();
+        let handle = thread::spawn(move || {
+            let mut guard = poisoned_clone.lock().unwrap();
+            *guard += 1;
+            panic!("intentional panic to poison the lock");
+        });
+        let _ = handle.join();
+
+        assert_eq!(
+            Lock::try_read(&*poisoned, read_i32),
+            Err(TryLockError::Poisoned)
+        );
+        assert_eq!(
+            Lock::try_write(&*poisoned, increment_i32),
+            Err(TryLockError::Poisoned),
+        );
     }
 }
 
@@ -829,5 +883,61 @@ mod rwlock_trait_tests {
 
         let result = Lock::try_write(&*rwlock, |value| *value);
         assert_eq!(result, Err(TryLockError::Poisoned));
+    }
+
+    #[test]
+    fn test_std_rwlock_try_methods_cover_shared_function_pointer_paths() {
+        let rwlock = Arc::new(RwLock::new(0));
+
+        assert_eq!(Lock::try_read(&*rwlock, read_i32), Ok(0));
+        assert_eq!(Lock::try_write(&*rwlock, increment_i32), Ok(1));
+
+        let read_barrier = Arc::new(Barrier::new(2));
+        let read_lock = rwlock.clone();
+        let read_barrier_clone = read_barrier.clone();
+        let read_holder = thread::spawn(move || {
+            let _guard = read_lock.write().unwrap();
+            read_barrier_clone.wait();
+            thread::sleep(std::time::Duration::from_millis(50));
+        });
+        read_barrier.wait();
+        assert_eq!(
+            Lock::try_read(&*rwlock, read_i32),
+            Err(TryLockError::WouldBlock)
+        );
+        read_holder.join().unwrap();
+
+        let write_barrier = Arc::new(Barrier::new(2));
+        let write_lock = rwlock.clone();
+        let write_barrier_clone = write_barrier.clone();
+        let write_holder = thread::spawn(move || {
+            let _guard = write_lock.read().unwrap();
+            write_barrier_clone.wait();
+            thread::sleep(std::time::Duration::from_millis(50));
+        });
+        write_barrier.wait();
+        assert_eq!(
+            Lock::try_write(&*rwlock, increment_i32),
+            Err(TryLockError::WouldBlock),
+        );
+        write_holder.join().unwrap();
+
+        let poisoned = Arc::new(RwLock::new(0));
+        let poisoned_clone = poisoned.clone();
+        let handle = thread::spawn(move || {
+            let mut guard = poisoned_clone.write().unwrap();
+            *guard += 1;
+            panic!("intentional panic to poison the lock");
+        });
+        let _ = handle.join();
+
+        assert_eq!(
+            Lock::try_read(&*poisoned, read_i32),
+            Err(TryLockError::Poisoned)
+        );
+        assert_eq!(
+            Lock::try_write(&*poisoned, increment_i32),
+            Err(TryLockError::Poisoned),
+        );
     }
 }

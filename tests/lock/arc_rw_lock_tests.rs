@@ -26,6 +26,15 @@ use qubit_concurrent::{
 mod arc_rw_lock_tests {
     use super::*;
 
+    fn read_i32(value: &i32) -> i32 {
+        *value
+    }
+
+    fn increment_i32(value: &mut i32) -> i32 {
+        *value += 1;
+        *value
+    }
+
     #[test]
     fn test_arc_rw_lock_new() {
         let rw_lock = ArcRwLock::new(42);
@@ -290,6 +299,59 @@ mod arc_rw_lock_tests {
         let _ = handle.join();
         let result = rw_lock.try_read(|value| *value);
         assert_eq!(result, Err(TryLockError::Poisoned));
+    }
+
+    #[test]
+    fn test_arc_rw_lock_try_methods_cover_shared_function_pointer_paths() {
+        let rw_lock = Arc::new(ArcRwLock::new(0));
+
+        assert_eq!(rw_lock.try_read(read_i32), Ok(0));
+        assert_eq!(rw_lock.try_write(increment_i32), Ok(1));
+
+        let read_barrier = Arc::new(std::sync::Barrier::new(2));
+        let read_lock = rw_lock.clone();
+        let read_barrier_clone = read_barrier.clone();
+        let read_holder = thread::spawn(move || {
+            read_lock.write(|_| {
+                read_barrier_clone.wait();
+                thread::sleep(std::time::Duration::from_millis(50));
+            });
+        });
+        read_barrier.wait();
+        assert_eq!(rw_lock.try_read(read_i32), Err(TryLockError::WouldBlock));
+        read_holder.join().unwrap();
+
+        let write_barrier = Arc::new(std::sync::Barrier::new(2));
+        let write_lock = rw_lock.clone();
+        let write_barrier_clone = write_barrier.clone();
+        let write_holder = thread::spawn(move || {
+            write_lock.read(|_| {
+                write_barrier_clone.wait();
+                thread::sleep(std::time::Duration::from_millis(50));
+            });
+        });
+        write_barrier.wait();
+        assert_eq!(
+            rw_lock.try_write(increment_i32),
+            Err(TryLockError::WouldBlock),
+        );
+        write_holder.join().unwrap();
+
+        let poisoned = Arc::new(ArcRwLock::new(0));
+        let poisoned_clone = poisoned.clone();
+        let handle = thread::spawn(move || {
+            poisoned_clone.write(|value| {
+                *value += 1;
+                panic!("intentional panic to poison the lock");
+            });
+        });
+        let _ = handle.join();
+
+        assert_eq!(poisoned.try_read(read_i32), Err(TryLockError::Poisoned));
+        assert_eq!(
+            poisoned.try_write(increment_i32),
+            Err(TryLockError::Poisoned),
+        );
     }
 
     #[test]

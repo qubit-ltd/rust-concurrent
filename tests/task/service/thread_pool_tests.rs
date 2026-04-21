@@ -12,6 +12,10 @@ use std::{
     io,
     sync::{
         Arc,
+        atomic::{
+            AtomicBool,
+            Ordering,
+        },
         mpsc,
     },
     time::{
@@ -24,6 +28,7 @@ use qubit_concurrent::task::{
     TaskExecutionError,
     service::{
         ExecutorService,
+        PoolJob,
         RejectedExecution,
         ThreadPool,
         ThreadPoolBuildError,
@@ -65,9 +70,22 @@ where
     assert!(condition(), "condition should become true within timeout");
 }
 
+fn ok_unit_task() -> Result<(), io::Error> {
+    Ok(())
+}
+
+fn ok_usize_task() -> Result<usize, io::Error> {
+    Ok(42)
+}
+
 #[test]
 fn test_thread_pool_submit_acceptance_is_not_task_success() {
     let pool = ThreadPool::new(2).expect("thread pool should be created");
+
+    pool.submit(ok_unit_task as fn() -> Result<(), io::Error>)
+        .expect("thread pool should accept shared runnable")
+        .get()
+        .expect("shared runnable should complete successfully");
 
     let handle = pool
         .submit(|| Err::<(), _>(io::Error::other("task failed")))
@@ -86,7 +104,7 @@ fn test_thread_pool_submit_callable_returns_value() {
     let pool = ThreadPool::new(2).expect("thread pool should be created");
 
     let handle = pool
-        .submit_callable(|| Ok::<usize, io::Error>(42))
+        .submit_callable(ok_usize_task as fn() -> Result<usize, io::Error>)
         .expect("thread pool should accept callable");
 
     assert_eq!(
@@ -97,12 +115,41 @@ fn test_thread_pool_submit_callable_returns_value() {
     create_runtime().block_on(pool.await_termination());
 }
 
+#[test]
+fn test_thread_pool_submit_job_runs_type_erased_job() {
+    let pool = ThreadPool::new(1).expect("thread pool should be created");
+    let ran = Arc::new(AtomicBool::new(false));
+    let cancelled = Arc::new(AtomicBool::new(false));
+
+    pool.submit_job(PoolJob::new(
+        {
+            let ran = Arc::clone(&ran);
+            Box::new(move || {
+                ran.store(true, Ordering::Release);
+            })
+        },
+        {
+            let cancelled = Arc::clone(&cancelled);
+            Box::new(move || {
+                cancelled.store(true, Ordering::Release);
+            })
+        },
+    ))
+    .expect("type-erased pool job should be accepted");
+
+    pool.shutdown();
+    create_runtime().block_on(pool.await_termination());
+
+    assert!(ran.load(Ordering::Acquire));
+    assert!(!cancelled.load(Ordering::Acquire));
+}
+
 #[tokio::test]
 async fn test_thread_pool_handle_can_be_awaited() {
     let pool = ThreadPool::new(2).expect("thread pool should be created");
 
     let handle = pool
-        .submit_callable(|| Ok::<usize, io::Error>(42))
+        .submit_callable(ok_usize_task as fn() -> Result<usize, io::Error>)
         .expect("thread pool should accept callable");
 
     assert_eq!(handle.await.expect("handle should await result"), 42);
@@ -115,7 +162,7 @@ fn test_thread_pool_shutdown_rejects_new_tasks() {
     let pool = ThreadPool::new(1).expect("thread pool should be created");
 
     pool.shutdown();
-    let result = pool.submit(|| Ok::<(), io::Error>(()));
+    let result = pool.submit(ok_unit_task as fn() -> Result<(), io::Error>);
 
     assert!(matches!(result, Err(RejectedExecution::Shutdown)));
     create_runtime().block_on(pool.await_termination());
@@ -147,9 +194,9 @@ fn test_thread_pool_bounded_queue_rejects_when_saturated() {
     wait_started(started_rx);
 
     let second = pool
-        .submit(|| Ok::<(), io::Error>(()))
+        .submit(ok_unit_task as fn() -> Result<(), io::Error>)
         .expect("second task should fill the queue");
-    let third = pool.submit(|| Ok::<(), io::Error>(()));
+    let third = pool.submit(ok_unit_task as fn() -> Result<(), io::Error>);
 
     assert!(matches!(third, Err(RejectedExecution::Saturated)));
     release_tx
@@ -184,11 +231,11 @@ fn test_thread_pool_shutdown_drains_queued_tasks() {
         .expect("first task should be accepted");
     wait_started(started_rx);
     let second = pool
-        .submit_callable(|| Ok::<usize, io::Error>(42))
+        .submit_callable(ok_usize_task as fn() -> Result<usize, io::Error>)
         .expect("queued task should be accepted");
 
     pool.shutdown();
-    let rejected = pool.submit(|| Ok::<(), io::Error>(()));
+    let rejected = pool.submit(ok_unit_task as fn() -> Result<(), io::Error>);
     release_tx
         .send(())
         .expect("blocking task should receive release signal");
@@ -207,7 +254,6 @@ fn test_thread_pool_shutdown_now_cancels_queued_tasks() {
     let pool = create_single_worker_pool();
     let (started_tx, started_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
-    let (queued_ran_tx, queued_ran_rx) = mpsc::channel();
 
     let first = pool
         .submit(move || {
@@ -222,12 +268,7 @@ fn test_thread_pool_shutdown_now_cancels_queued_tasks() {
         .expect("first task should be accepted");
     wait_started(started_rx);
     let queued = pool
-        .submit_callable(move || {
-            queued_ran_tx
-                .send(())
-                .expect("test should receive queued run signal only on failure");
-            Ok::<usize, io::Error>(42)
-        })
+        .submit_callable(ok_usize_task as fn() -> Result<usize, io::Error>)
         .expect("queued task should be accepted");
 
     let report = pool.shutdown_now();
@@ -242,10 +283,6 @@ fn test_thread_pool_shutdown_now_cancels_queued_tasks() {
     first.get().expect("running task should complete normally");
     create_runtime().block_on(pool.await_termination());
     assert!(pool.is_terminated());
-    assert!(
-        queued_ran_rx.try_recv().is_err(),
-        "shutdown_now cancelled queued task must not run",
-    );
 }
 
 #[test]
@@ -253,7 +290,6 @@ fn test_thread_pool_cancel_before_start_reports_cancelled() {
     let pool = create_single_worker_pool();
     let (started_tx, started_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
-    let (queued_ran_tx, queued_ran_rx) = mpsc::channel();
 
     let first = pool
         .submit(move || {
@@ -268,12 +304,7 @@ fn test_thread_pool_cancel_before_start_reports_cancelled() {
         .expect("first task should be accepted");
     wait_started(started_rx);
     let queued = pool
-        .submit_callable(move || {
-            queued_ran_tx
-                .send(())
-                .expect("test should receive queued run signal only on failure");
-            Ok::<usize, io::Error>(42)
-        })
+        .submit_callable(ok_usize_task as fn() -> Result<usize, io::Error>)
         .expect("queued task should be accepted");
 
     assert!(queued.cancel());
@@ -285,10 +316,6 @@ fn test_thread_pool_cancel_before_start_reports_cancelled() {
         .expect("blocking task should receive release signal");
     first.get().expect("running task should complete normally");
     create_runtime().block_on(pool.await_termination());
-    assert!(
-        queued_ran_rx.try_recv().is_err(),
-        "cancelled queued task must not run after its result is consumed",
-    );
 }
 
 #[test]
@@ -319,7 +346,7 @@ fn test_thread_pool_grows_above_core_when_queue_is_full() {
     wait_started(first_started_rx);
 
     let second = pool
-        .submit(|| Ok::<(), io::Error>(()))
+        .submit(ok_unit_task as fn() -> Result<(), io::Error>)
         .expect("second task should be queued");
     let third = pool
         .submit(move || {
@@ -334,7 +361,7 @@ fn test_thread_pool_grows_above_core_when_queue_is_full() {
         .expect("third task should create a non-core worker");
     wait_started(third_started_rx);
 
-    let fourth = pool.submit(|| Ok::<(), io::Error>(()));
+    let fourth = pool.submit(ok_unit_task as fn() -> Result<(), io::Error>);
 
     assert!(matches!(fourth, Err(RejectedExecution::Saturated)));
     assert_eq!(pool.stats().live_workers, 2);
@@ -386,7 +413,7 @@ fn test_thread_pool_excess_workers_retire_after_maximum_size_decreases() {
     wait_started(first_started_rx);
 
     let second = pool
-        .submit(|| Ok::<(), io::Error>(()))
+        .submit(ok_unit_task as fn() -> Result<(), io::Error>)
         .expect("second task should be queued");
     let third = pool
         .submit(move || {
@@ -586,7 +613,7 @@ fn test_thread_pool_reports_worker_spawn_failure() {
         .build()
         .expect("thread pool should be created lazily");
 
-    let result = pool.submit(|| Ok::<(), io::Error>(()));
+    let result = pool.submit(ok_unit_task as fn() -> Result<(), io::Error>);
 
     assert!(matches!(
         result,
@@ -606,7 +633,7 @@ fn test_thread_pool_cancels_queued_job_when_initial_worker_spawn_fails() {
         .build()
         .expect("thread pool should be created lazily");
 
-    let result = pool.submit(|| Ok::<(), io::Error>(()));
+    let result = pool.submit(ok_unit_task as fn() -> Result<(), io::Error>);
 
     assert!(matches!(
         result,

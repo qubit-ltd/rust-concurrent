@@ -88,3 +88,61 @@ fn test_arc_monitor_wait_until_blocks_until_notify_one() {
     waiter.join().expect("waiter should not panic");
     assert!(!monitor.read(|ready| *ready));
 }
+
+#[test]
+fn test_arc_monitor_notify_all_wakes_multiple_waiters() {
+    let monitor = ArcMonitor::new(false);
+    let (started_tx, started_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::channel();
+    let mut waiters = Vec::new();
+
+    for id in 0..2 {
+        let waiter_monitor = monitor.clone();
+        let waiter_started_tx = started_tx.clone();
+        let waiter_done_tx = done_tx.clone();
+        waiters.push(thread::spawn(move || {
+            waiter_started_tx
+                .send(())
+                .expect("test should observe waiter start");
+            waiter_monitor.wait_until(
+                |ready| *ready,
+                |ready| {
+                    assert!(*ready);
+                    id
+                },
+            );
+            waiter_done_tx
+                .send(id)
+                .expect("test should receive waiter result");
+        }));
+    }
+    drop(started_tx);
+    drop(done_tx);
+
+    for _ in 0..2 {
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("waiter should start within timeout");
+    }
+    assert!(started_rx.recv_timeout(Duration::from_millis(30)).is_err());
+
+    monitor.write(|ready| {
+        *ready = true;
+    });
+    monitor.notify_all();
+
+    let mut completed = vec![
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first waiter should finish after notification"),
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second waiter should finish after notification"),
+    ];
+    completed.sort_unstable();
+    assert_eq!(completed, vec![0, 1]);
+
+    for waiter in waiters {
+        waiter.join().expect("waiter should not panic");
+    }
+}

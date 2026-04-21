@@ -21,6 +21,15 @@ use qubit_concurrent::lock::{
     AsyncLock,
 };
 
+fn read_i32(value: &i32) -> i32 {
+    *value
+}
+
+fn increment_i32(value: &mut i32) -> i32 {
+    *value += 1;
+    *value
+}
+
 #[cfg(test)]
 mod async_lock_trait_tests {
     use super::*;
@@ -347,6 +356,21 @@ mod async_lock_trait_tests {
             "Expected None when mutex is already locked"
         );
     }
+
+    #[tokio::test]
+    async fn test_tokio_async_mutex_try_methods_cover_shared_function_pointer_paths() {
+        let mutex = AsyncMutex::new(0);
+
+        assert_eq!(AsyncLock::try_read(&mutex, read_i32), Some(0));
+        assert_eq!(AsyncLock::try_write(&mutex, increment_i32), Some(1));
+
+        let guard = mutex
+            .try_lock()
+            .expect("failed to acquire initial mutex guard");
+        assert_eq!(AsyncLock::try_read(&mutex, read_i32), None);
+        assert_eq!(AsyncLock::try_write(&mutex, increment_i32), None);
+        drop(guard);
+    }
 }
 
 #[cfg(test)]
@@ -662,5 +686,25 @@ mod async_rwlock_trait_tests {
             result.is_none(),
             "Expected None when rwlock read guard is already held"
         );
+    }
+
+    #[tokio::test]
+    async fn test_tokio_async_rwlock_try_methods_cover_shared_function_pointer_paths() {
+        let rwlock = AsyncRwLock::new(0);
+
+        assert_eq!(AsyncLock::try_read(&rwlock, read_i32), Some(0));
+        assert_eq!(AsyncLock::try_write(&rwlock, increment_i32), Some(1));
+
+        let write_guard = rwlock
+            .try_write()
+            .expect("failed to acquire initial write guard");
+        assert_eq!(AsyncLock::try_read(&rwlock, read_i32), None);
+        drop(write_guard);
+
+        let read_guard = rwlock
+            .try_read()
+            .expect("failed to acquire initial read guard");
+        assert_eq!(AsyncLock::try_write(&rwlock, increment_i32), None);
+        drop(read_guard);
     }
 }

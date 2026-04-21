@@ -37,9 +37,23 @@ fn create_runtime() -> tokio::runtime::Runtime {
         .expect("Failed to create tokio runtime for task tests")
 }
 
+fn ok_unit_task() -> Result<(), io::Error> {
+    Ok(())
+}
+
+fn ok_usize_task() -> Result<usize, io::Error> {
+    Ok(42)
+}
+
 #[test]
 fn test_thread_per_task_executor_service_submit_acceptance_is_not_task_success() {
     let service = ThreadPerTaskExecutorService::new();
+
+    service
+        .submit(ok_unit_task as fn() -> Result<(), io::Error>)
+        .expect("service should accept the shared runnable")
+        .get()
+        .expect("shared runnable should complete successfully");
 
     let handle = service
         .submit(|| Err::<(), _>(io::Error::other("task failed")))
@@ -56,7 +70,7 @@ fn test_thread_per_task_executor_service_submit_callable_returns_value() {
     let service = ThreadPerTaskExecutorService::new();
 
     let handle = service
-        .submit_callable(|| Ok::<usize, io::Error>(42))
+        .submit_callable(ok_usize_task as fn() -> Result<usize, io::Error>)
         .expect("service should accept the callable");
 
     assert_eq!(
@@ -81,7 +95,7 @@ fn test_thread_per_task_executor_service_shutdown_rejects_new_tasks() {
     let service = ThreadPerTaskExecutorService::new();
     service.shutdown();
 
-    let result = service.submit(|| Ok::<(), io::Error>(()));
+    let result = service.submit(ok_unit_task as fn() -> Result<(), io::Error>);
 
     assert!(matches!(result, Err(RejectedExecution::Shutdown)));
     assert!(service.is_shutdown());

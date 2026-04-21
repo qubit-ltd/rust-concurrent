@@ -78,6 +78,16 @@ mod tests {
             logger.log_prepare_commit_failed("commit");
             logger.log_prepare_rollback_failed("rollback");
         }
+
+        #[test]
+        fn test_enabled_execution_logger_logs_all_methods() {
+            let logger = ExecutionLogger::new(log::Level::Info, "enabled");
+
+            logger.log_unmet_message();
+            logger.log_prepare_failed("prepare");
+            logger.log_prepare_commit_failed("commit");
+            logger.log_prepare_rollback_failed("rollback");
+        }
     }
 
     mod test_executor_config {

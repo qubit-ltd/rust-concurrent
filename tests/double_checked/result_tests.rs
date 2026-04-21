@@ -114,6 +114,14 @@ mod tests {
                 ExecutionResult::Failed(ExecutorError::TaskFailed(message))
                     if message == "task failed"
             ));
+
+            let commit_result =
+                ExecutionResult::<(), String>::prepare_commit_failed("commit failed");
+            assert!(matches!(
+                commit_result,
+                ExecutionResult::Failed(ExecutorError::PrepareCommitFailed(message))
+                    if message == "commit failed"
+            ));
         }
     }
 }

@@ -29,6 +29,15 @@ use qubit_concurrent::lock::{
 mod parking_lot_mutex_tests {
     use super::*;
 
+    fn read_i32(value: &i32) -> i32 {
+        *value
+    }
+
+    fn increment_i32(value: &mut i32) -> i32 {
+        *value += 1;
+        *value
+    }
+
     #[test]
     fn test_parking_lot_mutex_read_basic() {
         let mutex = ParkingLotMutex::new(42);
@@ -160,6 +169,35 @@ mod parking_lot_mutex_tests {
             *value
         });
         assert_eq!(result, Ok(2));
+    }
+
+    #[test]
+    fn test_parking_lot_mutex_try_methods_cover_shared_function_pointer_paths() {
+        let mutex = Arc::new(ParkingLotMutex::new(0));
+
+        assert_eq!(Lock::try_read(&*mutex, read_i32), Ok(0));
+        assert_eq!(Lock::try_write(&*mutex, increment_i32), Ok(1));
+
+        let barrier = Arc::new(Barrier::new(2));
+        let mutex_clone = mutex.clone();
+        let barrier_clone = barrier.clone();
+        let handle = thread::spawn(move || {
+            Lock::write(&*mutex_clone, |_| {
+                barrier_clone.wait();
+                thread::sleep(std::time::Duration::from_millis(50));
+            });
+        });
+
+        barrier.wait();
+        assert_eq!(
+            Lock::try_read(&*mutex, read_i32),
+            Err(TryLockError::WouldBlock)
+        );
+        assert_eq!(
+            Lock::try_write(&*mutex, increment_i32),
+            Err(TryLockError::WouldBlock),
+        );
+        handle.join().unwrap();
     }
 
     #[test]

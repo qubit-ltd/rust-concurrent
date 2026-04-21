@@ -10,6 +10,10 @@
 
 use std::{
     io,
+    sync::atomic::{
+        AtomicBool,
+        Ordering,
+    },
     time::Duration,
 };
 
@@ -22,9 +26,32 @@ use qubit_concurrent::task::{
     },
 };
 
+static SHARED_CANCELLABLE_TASK_SHOULD_SLEEP: AtomicBool = AtomicBool::new(false);
+
+fn ok_unit_task() -> Result<(), io::Error> {
+    Ok(())
+}
+
+fn ok_usize_task() -> Result<usize, io::Error> {
+    Ok(42)
+}
+
+fn shared_cancellable_task() -> Result<(), io::Error> {
+    if SHARED_CANCELLABLE_TASK_SHOULD_SLEEP.load(Ordering::Acquire) {
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_tokio_executor_service_submit_acceptance_is_not_task_success() {
     let service = TokioExecutorService::new();
+
+    service
+        .submit(ok_unit_task as fn() -> Result<(), io::Error>)
+        .expect("service should accept the shared runnable")
+        .await
+        .expect("shared runnable should complete successfully");
 
     let handle = service
         .submit(|| Err::<(), _>(io::Error::other("task failed")))
@@ -41,7 +68,7 @@ async fn test_tokio_executor_service_submit_callable_returns_value() {
     let service = TokioExecutorService::new();
 
     let handle = service
-        .submit_callable(|| Ok::<usize, io::Error>(42))
+        .submit_callable(ok_usize_task as fn() -> Result<usize, io::Error>)
         .expect("service should accept the callable");
 
     assert_eq!(
@@ -55,7 +82,7 @@ async fn test_tokio_executor_service_shutdown_rejects_new_tasks() {
     let service = TokioExecutorService::new();
     service.shutdown();
 
-    let result = service.submit(|| Ok::<(), io::Error>(()));
+    let result = service.submit(ok_unit_task as fn() -> Result<(), io::Error>);
 
     assert!(matches!(result, Err(RejectedExecution::Shutdown)));
     assert!(service.is_shutdown());
@@ -105,18 +132,25 @@ async fn test_tokio_executor_service_shutdown_now_aborts_running_task_handle() {
 #[tokio::test]
 async fn test_tokio_task_handle_cancel_requests_abort() {
     let service = TokioExecutorService::new();
+    SHARED_CANCELLABLE_TASK_SHOULD_SLEEP.store(false, Ordering::Release);
+
+    service
+        .submit(shared_cancellable_task as fn() -> Result<(), io::Error>)
+        .expect("service should accept shared task before cancellation")
+        .await
+        .expect("shared task should complete before cancellation mode");
+
+    SHARED_CANCELLABLE_TASK_SHOULD_SLEEP.store(true, Ordering::Release);
 
     let handle = service
-        .submit(|| {
-            std::thread::sleep(Duration::from_secs(1));
-            Ok::<(), io::Error>(())
-        })
+        .submit(shared_cancellable_task as fn() -> Result<(), io::Error>)
         .expect("service should accept task");
 
     assert!(handle.cancel());
     tokio::task::yield_now().await;
     assert!(handle.is_done());
     assert!(matches!(handle.await, Err(TaskExecutionError::Cancelled)));
+    SHARED_CANCELLABLE_TASK_SHOULD_SLEEP.store(false, Ordering::Release);
     service.shutdown();
     service.await_termination().await;
 }

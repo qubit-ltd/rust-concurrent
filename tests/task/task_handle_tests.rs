@@ -15,9 +15,13 @@ use std::{
     time::Duration,
 };
 
-use qubit_concurrent::task::executor::{
-    Executor,
-    ThreadPerTaskExecutor,
+use qubit_concurrent::task::{
+    TaskExecutionError,
+    TaskHandle,
+    executor::{
+        Executor,
+        ThreadPerTaskExecutor,
+    },
 };
 
 #[tokio::test]
@@ -72,4 +76,28 @@ fn test_task_handle_cancel_after_start_returns_false() {
         .send(())
         .expect("task should receive release signal");
     assert_eq!(handle.get().expect("task should complete"), 42);
+}
+
+#[test]
+fn test_task_completion_start_and_complete_publishes_lazy_result() {
+    let (handle, completion) = TaskHandle::<usize, io::Error>::completion_pair();
+
+    assert!(completion.start_and_complete(|| Ok(42)));
+
+    assert_eq!(
+        handle.get().expect("lazy completion should publish result"),
+        42,
+    );
+}
+
+#[test]
+fn test_task_completion_start_and_complete_skips_cancelled_task() {
+    let (handle, completion) = TaskHandle::<usize, io::Error>::completion_pair();
+
+    assert!(handle.cancel());
+    assert!(!completion.start_and_complete(|| {
+        panic!("cancelled task must not run");
+    }));
+
+    assert!(matches!(handle.get(), Err(TaskExecutionError::Cancelled)));
 }

@@ -8,12 +8,31 @@
  ******************************************************************************/
 //! Tests for [`ThreadPerTaskExecutor`](qubit_concurrent::task::executor::ThreadPerTaskExecutor).
 
-use std::io;
-
-use qubit_concurrent::task::executor::{
-    Executor,
-    ThreadPerTaskExecutor,
+use std::{
+    io,
+    sync::atomic::{
+        AtomicUsize,
+        Ordering,
+    },
 };
+
+use qubit_concurrent::task::{
+    TaskExecutionError,
+    executor::{
+        Executor,
+        ThreadPerTaskExecutor,
+    },
+};
+
+static SHARED_RUNNER_TASK_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+fn shared_runner_task() -> Result<usize, &'static str> {
+    match SHARED_RUNNER_TASK_CALLS.fetch_add(1, Ordering::AcqRel) {
+        0 => Ok(42),
+        1 => Err("shared failure"),
+        _ => panic!("shared panic"),
+    }
+}
 
 #[test]
 fn test_thread_per_task_executor_execute_runs_task() {
@@ -38,4 +57,27 @@ fn test_thread_per_task_executor_call_returns_value() {
             .expect("thread-per-task executor should return callable value"),
         42,
     );
+}
+
+#[test]
+fn test_thread_per_task_executor_shared_callable_covers_runner_outcomes() {
+    SHARED_RUNNER_TASK_CALLS.store(0, Ordering::Release);
+    let executor = ThreadPerTaskExecutor;
+
+    let success = executor.call(shared_runner_task as fn() -> Result<usize, &'static str>);
+    assert_eq!(
+        success
+            .get()
+            .expect("first shared task call should succeed"),
+        42,
+    );
+
+    let failure = executor.call(shared_runner_task as fn() -> Result<usize, &'static str>);
+    assert!(matches!(
+        failure.get(),
+        Err(TaskExecutionError::Failed("shared failure")),
+    ));
+
+    let panicked = executor.call(shared_runner_task as fn() -> Result<usize, &'static str>);
+    assert!(matches!(panicked.get(), Err(TaskExecutionError::Panicked)));
 }

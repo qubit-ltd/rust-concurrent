@@ -11,16 +11,24 @@
 use std::{
     io,
     sync::mpsc,
+    thread,
     time::{
         Duration,
         Instant,
     },
 };
 
-use qubit_concurrent::task::executor::{
-    DelayExecutor,
-    Executor,
+use qubit_concurrent::task::{
+    TaskExecutionError,
+    executor::{
+        DelayExecutor,
+        Executor,
+    },
 };
+
+fn delayed_value_task() -> Result<usize, io::Error> {
+    Ok(42)
+}
 
 #[test]
 fn test_delay_executor_delays_task_start() {
@@ -51,7 +59,18 @@ fn test_delay_executor_delays_task_start() {
 fn test_delay_executor_returns_callable_value() {
     let executor = DelayExecutor::new(Duration::ZERO);
 
-    let handle = executor.call(|| Ok::<usize, io::Error>(42));
+    let handle = executor.call(delayed_value_task as fn() -> Result<usize, io::Error>);
 
     assert_eq!(handle.get().expect("callable should complete"), 42);
+}
+
+#[test]
+fn test_delay_executor_cancel_before_start_skips_callable() {
+    let executor = DelayExecutor::new(Duration::from_millis(80));
+
+    let handle = executor.call(delayed_value_task as fn() -> Result<usize, io::Error>);
+
+    assert!(handle.cancel());
+    assert!(matches!(handle.get(), Err(TaskExecutionError::Cancelled)));
+    thread::sleep(Duration::from_millis(120));
 }

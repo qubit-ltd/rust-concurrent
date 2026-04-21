@@ -1,0 +1,90 @@
+/*******************************************************************************
+ *
+ *    Copyright (c) 2025 - 2026.
+ *    Haixing Hu, Qubit Co. Ltd.
+ *
+ *    All rights reserved.
+ *
+ ******************************************************************************/
+//! Tests for [`ArcMonitor`](qubit_concurrent::lock::ArcMonitor).
+
+use std::{
+    sync::mpsc,
+    thread,
+    time::Duration,
+};
+
+use qubit_concurrent::lock::ArcMonitor;
+
+#[test]
+fn test_arc_monitor_new_read_write_updates_state() {
+    let monitor = ArcMonitor::new(vec![1, 2, 3]);
+
+    monitor.write(|items| {
+        items.push(4);
+    });
+
+    assert_eq!(monitor.read(|items| items.clone()), vec![1, 2, 3, 4]);
+}
+
+#[test]
+fn test_arc_monitor_default_uses_default_value() {
+    let monitor = ArcMonitor::<Vec<i32>>::default();
+
+    assert!(monitor.read(|items| items.is_empty()));
+}
+
+#[test]
+fn test_arc_monitor_clone_shares_state() {
+    let monitor = ArcMonitor::new(1usize);
+    let cloned = monitor.clone();
+
+    cloned.write(|value| {
+        *value += 1;
+    });
+
+    assert_eq!(monitor.read(|value| *value), 2);
+}
+
+#[test]
+fn test_arc_monitor_wait_until_blocks_until_notify_one() {
+    let monitor = ArcMonitor::new(false);
+    let (started_tx, started_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::channel();
+
+    let waiter_monitor = monitor.clone();
+    let waiter = thread::spawn(move || {
+        started_tx
+            .send(())
+            .expect("test should observe waiter start");
+        let result = waiter_monitor.wait_until(
+            |ready| *ready,
+            |ready| {
+                *ready = false;
+                42
+            },
+        );
+        done_tx
+            .send(result)
+            .expect("test should receive waiter result");
+    });
+
+    started_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("waiter should start within timeout");
+    assert!(done_rx.recv_timeout(Duration::from_millis(30)).is_err());
+
+    monitor.write(|ready| {
+        *ready = true;
+    });
+    monitor.notify_one();
+
+    assert_eq!(
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("waiter should finish after notification"),
+        42,
+    );
+    waiter.join().expect("waiter should not panic");
+    assert!(!monitor.read(|ready| *ready));
+}

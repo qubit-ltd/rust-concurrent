@@ -16,9 +16,10 @@ pub mod lock;
 pub mod task;
 
 pub use double_checked::{
-    BuilderError,
-    DoubleCheckedLock,
-    ExecutionBuilder,
+    DoubleCheckedLockExecutor,
+    DoubleCheckedLockExecutorBuilder,
+    DoubleCheckedLockExecutorLockBuilder,
+    DoubleCheckedLockExecutorReadyBuilder,
     ExecutionContext,
     ExecutionLogger,
     ExecutionResult,
@@ -27,6 +28,7 @@ pub use double_checked::{
 pub use lock::{
     ArcAsyncMutex,
     ArcAsyncRwLock,
+    ArcMonitor,
     ArcMutex,
     ArcRwLock,
     AsyncLock,

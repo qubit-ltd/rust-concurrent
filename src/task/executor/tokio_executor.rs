@@ -83,7 +83,7 @@ impl Executor for TokioExecutor {
         = TokioExecution<R, E>
     where
         R: Send + 'static,
-        E: Send + 'static;
+        E: std::fmt::Display + Send + 'static;
 
     /// Spawns the callable on Tokio's blocking task pool.
     ///
@@ -99,7 +99,7 @@ impl Executor for TokioExecutor {
     where
         C: Callable<R, E> + Send + 'static,
         R: Send + 'static,
-        E: Send + 'static,
+        E: std::fmt::Display + Send + 'static,
     {
         // `spawn_blocking` runs now and requires `Handle::current()` — caller must
         // already be inside a Tokio runtime (see struct-level documentation).

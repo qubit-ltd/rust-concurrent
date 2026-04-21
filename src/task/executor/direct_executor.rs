@@ -22,7 +22,7 @@ impl Executor for DirectExecutor {
         = Result<R, E>
     where
         R: Send + 'static,
-        E: Send + 'static;
+        E: std::fmt::Display + Send + 'static;
 
     /// Executes the callable inline and returns its result.
     #[inline]
@@ -30,7 +30,7 @@ impl Executor for DirectExecutor {
     where
         C: Callable<R, E> + Send + 'static,
         R: Send + 'static,
-        E: Send + 'static,
+        E: std::fmt::Display + Send + 'static,
     {
         task.call()
     }

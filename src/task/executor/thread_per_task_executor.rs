@@ -59,14 +59,14 @@ impl Executor for ThreadPerTaskExecutor {
         = TaskHandle<R, E>
     where
         R: Send + 'static,
-        E: Send + 'static;
+        E: std::fmt::Display + Send + 'static;
 
     /// Spawns one OS thread for the callable and returns a handle to its result.
     fn call<C, R, E>(&self, task: C) -> Self::Execution<R, E>
     where
         C: Callable<R, E> + Send + 'static,
         R: Send + 'static,
-        E: Send + 'static,
+        E: std::fmt::Display + Send + 'static,
     {
         let (handle, completion) = TaskHandle::completion_pair();
         thread::spawn(move || {

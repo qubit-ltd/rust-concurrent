@@ -41,15 +41,12 @@ use std::sync::{
 /// # Example
 ///
 /// ```rust
-/// use std::{
-///     sync::Arc,
-///     thread,
-/// };
+/// use std::thread;
 ///
-/// use qubit_concurrent::lock::Monitor;
+/// use qubit_concurrent::lock::ArcMonitor;
 ///
-/// let monitor = Arc::new(Monitor::new(false));
-/// let waiter_monitor = Arc::clone(&monitor);
+/// let monitor = ArcMonitor::new(false);
+/// let waiter_monitor = monitor.clone();
 ///
 /// let waiter = thread::spawn(move || {
 ///     waiter_monitor.wait_until(
@@ -202,14 +199,13 @@ impl<T> Monitor<T> {
     /// # Example
     ///
     /// ```rust
-    /// use std::sync::Arc;
     /// use std::thread;
     ///
-    /// use qubit_concurrent::lock::Monitor;
+    /// use qubit_concurrent::lock::ArcMonitor;
     ///
-    /// let monitor = Arc::new(Monitor::new(false));
+    /// let monitor = ArcMonitor::new(false);
     /// let waiter = {
-    ///     let m = Arc::clone(&monitor);
+    ///     let m = monitor.clone();
     ///     thread::spawn(move || {
     ///         m.wait_until(
     ///             |ready| *ready,
@@ -248,14 +244,13 @@ impl<T> Monitor<T> {
     /// # Example
     ///
     /// ```rust
-    /// use std::sync::Arc;
     /// use std::thread;
     ///
-    /// use qubit_concurrent::lock::Monitor;
+    /// use qubit_concurrent::lock::ArcMonitor;
     ///
-    /// let monitor = Arc::new(Monitor::new(0_u32));
+    /// let monitor = ArcMonitor::new(0_u32);
     /// let waiter = {
-    ///     let m = Arc::clone(&monitor);
+    ///     let m = monitor.clone();
     ///     thread::spawn(move || {
     ///         m.wait_until(|n| *n > 0, |n| *n -= 1);
     ///     })
@@ -278,15 +273,14 @@ impl<T> Monitor<T> {
     /// # Example
     ///
     /// ```rust
-    /// use std::sync::Arc;
     /// use std::thread;
     ///
-    /// use qubit_concurrent::lock::Monitor;
+    /// use qubit_concurrent::lock::ArcMonitor;
     ///
-    /// let monitor = Arc::new(Monitor::new(false));
+    /// let monitor = ArcMonitor::new(false);
     /// let mut handles = Vec::new();
     /// for _ in 0..2 {
-    ///     let m = Arc::clone(&monitor);
+    ///     let m = monitor.clone();
     ///     handles.push(thread::spawn(move || {
     ///         m.wait_until(|ready| *ready, |_| ());
     ///     }));

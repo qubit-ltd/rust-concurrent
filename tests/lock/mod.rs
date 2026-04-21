@@ -19,6 +19,7 @@ mod monitor_tests;
 // Implementation tests
 mod arc_async_mutex_tests;
 mod arc_async_rw_lock_tests;
+mod arc_monitor_tests;
 mod arc_mutex_tests;
 mod arc_rw_lock_tests;
 mod arc_std_mutex_tests;

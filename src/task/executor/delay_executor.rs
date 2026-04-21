@@ -66,14 +66,14 @@ impl Executor for DelayExecutor {
         = TaskHandle<R, E>
     where
         R: Send + 'static,
-        E: Send + 'static;
+        E: std::fmt::Display + Send + 'static;
 
     /// Starts a helper thread that waits and then runs the callable.
     fn call<C, R, E>(&self, task: C) -> Self::Execution<R, E>
     where
         C: Callable<R, E> + Send + 'static,
         R: Send + 'static,
-        E: Send + 'static,
+        E: std::fmt::Display + Send + 'static,
     {
         let (handle, completion) = TaskHandle::completion_pair();
         let delay = self.delay;

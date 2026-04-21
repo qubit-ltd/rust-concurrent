@@ -19,9 +19,10 @@ use crate::double_checked::execution_result::ExecutionResult;
 ///
 /// This type provides result retrieval functionality after task execution.
 ///
-/// Prepare lifecycle callbacks are configured on [`super::ExecutionBuilder`]
-/// and are already applied before an `ExecutionContext` is returned. Task
-/// closures are responsible for their own rollback, cleanup, and commit logic.
+/// Prepare lifecycle callbacks are configured on
+/// [`super::DoubleCheckedLockExecutor`] and are already applied before an
+/// `ExecutionContext` is returned. Task closures are responsible for their own
+/// rollback, cleanup, and commit logic.
 ///
 /// # Type Parameters
 ///

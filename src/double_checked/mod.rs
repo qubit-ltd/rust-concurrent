@@ -15,22 +15,18 @@
 //!
 //! Haixing Hu
 
-pub mod builder_error;
-pub mod double_checked_lock;
-pub mod execution_builder;
+pub mod double_checked_lock_executor;
 pub mod execution_context;
 pub mod execution_logger;
 pub mod execution_result;
 pub mod executor_config;
 pub mod executor_error;
 
-pub use builder_error::BuilderError;
-pub use double_checked_lock::DoubleCheckedLock;
-pub use execution_builder::{
-    Conditioned,
-    Configuring,
-    ExecutionBuilder,
-    Initial,
+pub use double_checked_lock_executor::{
+    DoubleCheckedLockExecutor,
+    DoubleCheckedLockExecutorBuilder,
+    DoubleCheckedLockExecutorLockBuilder,
+    DoubleCheckedLockExecutorReadyBuilder,
 };
 pub use execution_context::ExecutionContext;
 pub use execution_logger::ExecutionLogger;

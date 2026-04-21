@@ -8,7 +8,7 @@
  ******************************************************************************/
 //! # Double-Checked Lock Executor Demo
 //!
-//! Demonstrates the usage of the double-checked lock executor.
+//! Demonstrates the usage of a reusable double-checked lock executor.
 //!
 //! # Author
 //!
@@ -23,7 +23,7 @@ use std::sync::{
 };
 
 use qubit_concurrent::{
-    DoubleCheckedLock,
+    DoubleCheckedLockExecutor,
     lock::{
         ArcMutex,
         Lock,
@@ -48,13 +48,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("Initial data: {}", data.read(|d| *d));
 
-    // Try to execute when service is not running (should fail)
-    let result = DoubleCheckedLock::on(&data)
+    let executor = DoubleCheckedLockExecutor::builder()
+        .on(data.clone())
         .when({
             let running = running.clone();
             move || running.load(Ordering::Acquire)
         })
-        .call_mut(|value: &mut i32| {
+        .build();
+
+    // Try to execute when service is not running (should fail)
+    let result = executor
+        .call_with(|value: &mut i32| {
             *value += 1;
             Ok::<_, ServiceError>(*value)
         })
@@ -74,12 +78,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Now execute should succeed
-    let result = DoubleCheckedLock::on(&data)
-        .when({
-            let running = running.clone();
-            move || running.load(Ordering::Acquire)
-        })
-        .call_mut(|value: &mut i32| {
+    let result = executor
+        .call_with(|value: &mut i32| {
             *value += 1;
             Ok::<_, ServiceError>(*value)
         })
@@ -102,12 +102,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Try to execute when service is stopped (should fail)
-    let result = DoubleCheckedLock::on(&data)
-        .when({
-            let running = running.clone();
-            move || running.load(Ordering::Acquire)
-        })
-        .call_mut(|value: &mut i32| {
+    let result = executor
+        .call_with(|value: &mut i32| {
             *value += 1;
             Ok::<_, ServiceError>(*value)
         })

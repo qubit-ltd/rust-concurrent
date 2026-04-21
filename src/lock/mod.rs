@@ -29,6 +29,7 @@ mod try_lock_error;
 // Implementations
 mod arc_async_mutex;
 mod arc_async_rw_lock;
+mod arc_monitor;
 mod arc_mutex;
 mod arc_rw_lock;
 mod arc_std_mutex;
@@ -37,6 +38,7 @@ mod arc_std_mutex;
 // Re-export implementations
 pub use arc_async_mutex::ArcAsyncMutex;
 pub use arc_async_rw_lock::ArcAsyncRwLock;
+pub use arc_monitor::ArcMonitor;
 pub use arc_mutex::ArcMutex;
 pub use arc_rw_lock::ArcRwLock;
 pub use arc_std_mutex::ArcStdMutex;

@@ -18,7 +18,7 @@ Qubit Concurrent provides easy-to-use wrappers around both synchronous and async
 ### 🔒 **Synchronous Locks**
 - **ArcMutex**: Thread-safe mutual exclusion lock wrapper with `Arc` integration
 - **ArcRwLock**: Thread-safe read-write lock wrapper supporting multiple concurrent readers
-- **Monitor**: Condition-based state coordination backed by `Mutex` and `Condvar`
+- **Monitor / ArcMonitor**: Condition-based state coordination backed by `Mutex` and `Condvar`, with an Arc-integrated wrapper for shared use
 - **Convenient API**: `read`/`write` and `try_read`/`try_write` methods for cleaner lock handling
 - **Automatic RAII**: Ensures proper lock release through scope-based management
 
@@ -36,7 +36,7 @@ Qubit Concurrent provides easy-to-use wrappers around both synchronous and async
 - **Clear acceptance semantics**: `ExecutorService` acceptance is separate from task success
 
 ### 🔁 **Double-checked locking**
-- **DoubleCheckedLock**: Fluent builder for test-outside-lock / retest-inside-lock flows, optional prepare / rollback / commit hooks, and `call` / `call_mut` tasks
+- **DoubleCheckedLockExecutor**: Reusable executor for test-outside-lock / retest-inside-lock flows, optional prepare / rollback / commit hooks, and `call` / `execute` / `call_with` / `execute_with` tasks
 - **ExecutionResult**: Structured outcomes (success, condition unmet, task error, prepare failures)
 
 ### 🎯 **Key Benefits**
@@ -51,7 +51,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-qubit-concurrent = "0.5.0"
+qubit-concurrent = "0.6.0"
 ```
 
 ## Quick Start
@@ -206,16 +206,13 @@ fn main() {
 ### Condition-Based Monitor
 
 ```rust
-use std::{
-    sync::Arc,
-    thread,
-};
+use std::thread;
 
-use qubit_concurrent::Monitor;
+use qubit_concurrent::ArcMonitor;
 
 fn main() {
-    let monitor = Arc::new(Monitor::new(Vec::<String>::new()));
-    let worker_monitor = Arc::clone(&monitor);
+    let monitor = ArcMonitor::new(Vec::<String>::new());
+    let worker_monitor = monitor.clone();
 
     let worker = thread::spawn(move || {
         worker_monitor.wait_until(
@@ -243,7 +240,7 @@ Skip lock acquisition and expensive reads when a cheap flag already rules them o
 ```rust
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use qubit_concurrent::{DoubleCheckedLock, ArcMutex, lock::Lock};
+use qubit_concurrent::{DoubleCheckedLockExecutor, ArcMutex, lock::Lock};
 
 fn read_balance(latest: &i32) -> Result<i32, std::io::Error> {
     // Expensive: ledger reconciliation, remote validation, etc.
@@ -254,12 +251,16 @@ fn main() {
     let balance = ArcMutex::new(1_000);
     let frozen = Arc::new(AtomicBool::new(false));
 
-    let result = DoubleCheckedLock::on(&balance)
+    let executor = DoubleCheckedLockExecutor::builder()
+        .on(balance.clone())
         .when({
             let frozen = frozen.clone();
             move || !frozen.load(Ordering::Acquire)
         })
-        .call(|cached: &i32| read_balance(cached))
+        .build();
+
+    let result = executor
+        .call_with(|latest: &mut i32| read_balance(latest))
         .get_result();
 
     assert!(result.is_success());
@@ -348,6 +349,20 @@ thread panics while holding the lock.
 - [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_one) - Wake one waiting thread
 - [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_all) - Wake all waiting threads
 
+### ArcMonitor
+
+An Arc-integrated monitor wrapper for sharing condition-based state across
+threads without writing `Arc::new(Monitor::new(...))`.
+
+**Methods:**
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.new) - Create a new shared monitor
+- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.read) - Read protected state
+- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.write) - Mutate protected state
+- [`wait_until<P, F, R>(&self, ready: P, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_until) - Wait until a predicate is true, then mutate the state
+- [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_one) - Wake one waiting thread
+- [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_all) - Wake all waiting threads
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.clone) - Clone the Arc-backed monitor handle
+
 ### ArcAsyncMutex
 
 An asynchronous mutual exclusion lock for Tokio runtime.
@@ -405,25 +420,30 @@ Service-related types live under `task::service`.
 - [`is_terminated(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/trait.ExecutorService.html#tymethod.is_terminated) - Check if all tasks completed
 - [`await_termination(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/trait.ExecutorService.html#tymethod.await_termination) - Wait for service termination
 
-### Runnable and Callable
+### Runnable, Callable, RunnableWith and CallableWith
 
 Task abstractions provided by `qubit-function`.
 
 **Methods:**
 - [`run(&mut self) -> Result<(), E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Runnable.html#tymethod.run) - Execute a fallible reusable action
 - [`call(&mut self) -> Result<R, E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Callable.html#tymethod.call) - Execute a fallible reusable computation
+- [`run_with(&mut self, &mut T) -> Result<(), E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.RunnableWith.html#tymethod.run_with) - Execute a fallible reusable action with mutable input
+- [`call_with(&mut self, &mut T) -> Result<R, E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.CallableWith.html#tymethod.call_with) - Execute a fallible reusable computation with mutable input
 - [`into_box()`](https://docs.rs/qubit-function/latest/qubit_function/trait.Runnable.html#method.into_box) - Convert a task into `BoxRunnable` or `BoxCallable`
 
-### DoubleCheckedLock
+### DoubleCheckedLockExecutor
 
-Entry point for the double-checked locking fluent API; see [`DoubleCheckedLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLock.html) and [`ExecutionBuilder`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html).
+Reusable executor for the double-checked locking API; see [`DoubleCheckedLockExecutor`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html).
 
 **Typical flow:**
-- [`DoubleCheckedLock::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLock.html#method.on) — attach to a [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) (for example [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html) or [`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html))
-- [`ExecutionBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.when-1) — fast-path predicate (evaluated twice: outside and inside the lock)
-- Optional [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.prepare-1) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.rollback_prepare-1) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.commit_prepare-1) — fallible `Runnable` hooks
-- [`call`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call-1) or [`call_mut`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call_mut-1) — task under the lock
-- [`get_result`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.get_result-1) — [`ExecutionResult`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/enum.ExecutionResult.html)
+- [`DoubleCheckedLockExecutor::builder`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.builder) — create the reusable executor builder
+- [`DoubleCheckedLockExecutorBuilder::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorBuilder.html#method.on) — attach a [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) handle (for example a cloned [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html) or [`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html))
+- [`DoubleCheckedLockExecutorLockBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorLockBuilder.html#method.when) — fast-path predicate (evaluated twice: outside and inside the lock)
+- Optional [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.prepare) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.rollback_prepare) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.commit_prepare) — fallible `Runnable` hooks
+- [`build`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.build) — create the reusable executor
+- [`call`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.call) / [`execute`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.execute) — run zero-argument `Callable` or `Runnable` tasks under the configured double-check flow
+- [`call_with`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.call_with) / [`execute_with`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.execute_with) — run tasks that receive mutable access to the protected value
+- [`get_result`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionContext.html#method.get_result) — get the [`ExecutionResult`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/enum.ExecutionResult.html)
 
 ## Design Patterns
 
@@ -438,7 +458,7 @@ All locks use closure-based access patterns for several benefits:
 
 ### Arc Integration
 
-**Important**: All `ArcMutex`, `ArcRwLock`, `ArcAsyncMutex`, and `ArcAsyncRwLock` types already have `Arc` integrated internally. You don't need to wrap them with `Arc` again.
+**Important**: All `ArcMutex`, `ArcRwLock`, `ArcAsyncMutex`, `ArcAsyncRwLock`, and `ArcMonitor` types already have `Arc` integrated internally. You don't need to wrap them with `Arc` again.
 
 ```rust
 // ✅ Correct - use directly

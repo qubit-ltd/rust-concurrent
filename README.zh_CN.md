@@ -18,7 +18,7 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 ### 🔒 **同步锁**
 - **ArcMutex**：集成 `Arc` 的线程安全互斥锁包装器
 - **ArcRwLock**：支持多个并发读者的线程安全读写锁包装器
-- **Monitor**：基于 `Mutex` 和 `Condvar` 的条件状态协调原语
+- **Monitor / ArcMonitor**：基于 `Mutex` 和 `Condvar` 的条件状态协调原语，并提供集成 `Arc` 的共享包装器
 - **便捷 API**：提供 `read`/`write` 与 `try_read`/`try_write` 方法，实现更清晰的锁处理
 - **自动 RAII**：通过基于作用域的管理确保正确释放锁
 
@@ -36,7 +36,7 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 - **清晰接收语义**：`ExecutorService` 接收任务与任务执行成功是两件事
 
 ### 🔁 **双重检查锁**
-- **DoubleCheckedLock**：可链式配置的双重检查流程（锁外/锁内两次条件判断、可选 prepare / 回滚 / 提交、`call` / `call_mut` 任务）
+- **DoubleCheckedLockExecutor**：可复用的双重检查执行器（锁外/锁内两次条件判断、可选 prepare / 回滚 / 提交、`call` / `execute` / `call_with` / `execute_with` 任务）
 - **ExecutionResult**：结构化结果（成功、条件未满足、任务或 prepare 错误等）
 
 ### 🎯 **主要优势**
@@ -51,7 +51,7 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 
 ```toml
 [dependencies]
-qubit-concurrent = "0.5.0"
+qubit-concurrent = "0.6.0"
 ```
 
 ## 快速开始
@@ -206,16 +206,13 @@ fn main() {
 ### 基于条件的 Monitor
 
 ```rust
-use std::{
-    sync::Arc,
-    thread,
-};
+use std::thread;
 
-use qubit_concurrent::Monitor;
+use qubit_concurrent::ArcMonitor;
 
 fn main() {
-    let monitor = Arc::new(Monitor::new(Vec::<String>::new()));
-    let worker_monitor = Arc::clone(&monitor);
+    let monitor = ArcMonitor::new(Vec::<String>::new());
+    let worker_monitor = monitor.clone();
 
     let worker = thread::spawn(move || {
         worker_monitor.wait_until(
@@ -243,7 +240,7 @@ fn main() {
 ```rust
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use qubit_concurrent::{DoubleCheckedLock, ArcMutex, lock::Lock};
+use qubit_concurrent::{DoubleCheckedLockExecutor, ArcMutex, lock::Lock};
 
 fn read_balance(latest: &i32) -> Result<i32, std::io::Error> {
     // 高成本：对账、远程校验等
@@ -254,12 +251,16 @@ fn main() {
     let balance = ArcMutex::new(1_000);
     let frozen = Arc::new(AtomicBool::new(false));
 
-    let result = DoubleCheckedLock::on(&balance)
+    let executor = DoubleCheckedLockExecutor::builder()
+        .on(balance.clone())
         .when({
             let frozen = frozen.clone();
             move || !frozen.load(Ordering::Acquire)
         })
-        .call(|cached: &i32| read_balance(cached))
+        .build();
+
+    let result = executor
+        .call_with(|latest: &mut i32| read_balance(latest))
         .get_result();
 
     assert!(result.is_success());
@@ -313,6 +314,20 @@ fn main() {
 - [`wait_until<P, F, R>(&self, ready: P, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.wait_until) - 等待条件为真，然后修改状态
 - [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_one) - 唤醒一个等待线程
 - [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_all) - 唤醒所有等待线程
+
+### ArcMonitor
+
+集成 `Arc` 的 monitor 包装器，用于在线程间共享条件状态，无需手写
+`Arc::new(Monitor::new(...))`。
+
+**方法：**
+- [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.new) - 创建新的共享 monitor
+- [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.read) - 读取受保护状态
+- [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.write) - 修改受保护状态
+- [`wait_until<P, F, R>(&self, ready: P, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_until) - 等待条件为真，然后修改状态
+- [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_one) - 唤醒一个等待线程
+- [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_all) - 唤醒所有等待线程
+- [`clone(&self) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.clone) - 克隆 Arc 支持的 monitor 句柄
 
 ### ArcAsyncMutex
 
@@ -371,25 +386,30 @@ Service 相关类型位于 `task::service` 模块。
 - [`is_terminated(&self) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/trait.ExecutorService.html#tymethod.is_terminated) - 检查所有任务是否已完成
 - [`await_termination(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/trait.ExecutorService.html#tymethod.await_termination) - 等待服务终止
 
-### Runnable 与 Callable
+### Runnable、Callable、RunnableWith 与 CallableWith
 
 由 `qubit-function` 提供的任务抽象。
 
 **方法：**
 - [`run(&mut self) -> Result<(), E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Runnable.html#tymethod.run) - 执行可复用可失败动作
 - [`call(&mut self) -> Result<R, E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Callable.html#tymethod.call) - 执行可复用可失败计算
+- [`run_with(&mut self, &mut T) -> Result<(), E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.RunnableWith.html#tymethod.run_with) - 用可变输入执行可复用可失败动作
+- [`call_with(&mut self, &mut T) -> Result<R, E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.CallableWith.html#tymethod.call_with) - 用可变输入执行可复用可失败计算
 - [`into_box()`](https://docs.rs/qubit-function/latest/qubit_function/trait.Runnable.html#method.into_box) - 转换为 `BoxRunnable` 或 `BoxCallable`
 
-### DoubleCheckedLock
+### DoubleCheckedLockExecutor
 
-双重检查锁流式 API 的入口；详见 [`DoubleCheckedLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLock.html) 与 [`ExecutionBuilder`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html)。
+可复用的双重检查锁执行器；详见 [`DoubleCheckedLockExecutor`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html)。
 
 **典型步骤：**
-- [`DoubleCheckedLock::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLock.html#method.on) — 绑定实现 [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) 的类型（例如 [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html)、[`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html)）
-- [`ExecutionBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.when-1) — 快路径条件（在锁外与锁内各执行一次）
-- 可选 [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.prepare-1) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.rollback_prepare-1) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.commit_prepare-1) — 可失败 `Runnable` 钩子
-- [`call`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call-1) 或 [`call_mut`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.call_mut-1) — 在锁保护下执行任务
-- [`get_result`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionBuilder.html#method.get_result-1) — 得到 [`ExecutionResult`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/enum.ExecutionResult.html)
+- [`DoubleCheckedLockExecutor::builder`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.builder) — 创建可复用执行器的构建器
+- [`DoubleCheckedLockExecutorBuilder::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorBuilder.html#method.on) — 绑定实现 [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) 的句柄（例如克隆后的 [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html)、[`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html)）
+- [`DoubleCheckedLockExecutorLockBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorLockBuilder.html#method.when) — 快路径条件（在锁外与锁内各执行一次）
+- 可选 [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.prepare) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.rollback_prepare) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.commit_prepare) — 可失败 `Runnable` 钩子
+- [`build`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutorReadyBuilder.html#method.build) — 创建可复用执行器
+- [`call`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.call) / [`execute`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.execute) — 在配置好的双重检查流程下执行零参数 `Callable` 或 `Runnable`
+- [`call_with`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.call_with) / [`execute_with`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.execute_with) — 执行可获得受保护值可变访问权的任务
+- [`get_result`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutionContext.html#method.get_result) — 得到 [`ExecutionResult`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/enum.ExecutionResult.html)
 
 ## 设计模式
 
@@ -404,7 +424,7 @@ Service 相关类型位于 `task::service` 模块。
 
 ### Arc 集成
 
-**重要提示**：所有的 `ArcMutex`、`ArcRwLock`、`ArcAsyncMutex` 和 `ArcAsyncRwLock` 类型内部已经集成了 `Arc`。你不需要再用 `Arc` 包装它们。
+**重要提示**：所有的 `ArcMutex`、`ArcRwLock`、`ArcAsyncMutex`、`ArcAsyncRwLock` 和 `ArcMonitor` 类型内部已经集成了 `Arc`。你不需要再用 `Arc` 包装它们。
 
 ```rust
 // ✅ 正确 - 直接使用

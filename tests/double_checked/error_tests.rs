@@ -10,10 +10,7 @@
 mod tests {
     use std::io;
 
-    use qubit_concurrent::double_checked::{
-        BuilderError,
-        ExecutorError,
-    };
+    use qubit_concurrent::double_checked::ExecutorError;
 
     mod test_executor_error {
         use super::*;
@@ -78,31 +75,6 @@ mod tests {
         #[test]
         fn test_executor_error_is_error_trait() {
             let error = ExecutorError::<String>::TaskFailed("Test".to_string());
-            // This will compile if it implements Error trait
-            let _error_trait: &dyn std::error::Error = &error;
-        }
-    }
-
-    mod test_builder_error {
-        use super::*;
-
-        #[test]
-        fn test_builder_error_missing_tester_display() {
-            let error = BuilderError::MissingTester;
-            let display = format!("{}", error);
-            assert_eq!(display, "Tester function is required");
-        }
-
-        #[test]
-        fn test_builder_error_debug() {
-            let error = BuilderError::MissingTester;
-            let debug_str = format!("{:?}", error);
-            assert!(debug_str.contains("MissingTester"));
-        }
-
-        #[test]
-        fn test_builder_error_is_error_trait() {
-            let error = BuilderError::MissingTester;
             // This will compile if it implements Error trait
             let _error_trait: &dyn std::error::Error = &error;
         }

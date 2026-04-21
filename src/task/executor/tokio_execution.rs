@@ -67,6 +67,21 @@ impl<R, E> TokioExecution<R, E> {
     pub fn is_finished(&self) -> bool {
         self.handle.is_finished()
     }
+
+    /// Requests cancellation of the underlying Tokio task.
+    ///
+    /// Tokio can cancel a blocking task only before it starts. If the blocking
+    /// closure is already running, this request is best-effort and awaiting the
+    /// execution will still wait for the closure to finish.
+    ///
+    /// # Returns
+    ///
+    /// `true` after the cancellation request has been sent to Tokio.
+    #[inline]
+    pub fn cancel(&self) -> bool {
+        self.handle.abort();
+        true
+    }
 }
 
 impl<R, E> Future for TokioExecution<R, E> {

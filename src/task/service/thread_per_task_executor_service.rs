@@ -19,8 +19,8 @@ use std::{
 };
 
 use qubit_atomic::{
-    AtomicBool,
-    AtomicCounter,
+    Atomic,
+    AtomicCount,
 };
 use qubit_function::Callable;
 
@@ -38,8 +38,8 @@ use super::{
 /// Shared state for [`ThreadPerTaskExecutorService`].
 #[derive(Default)]
 struct ThreadPerTaskExecutorServiceState {
-    shutdown: AtomicBool,
-    active_tasks: AtomicCounter,
+    shutdown: Atomic<bool>,
+    active_tasks: AtomicCount,
     submission_lock: Mutex<()>,
     termination_lock: Mutex<()>,
     termination: Condvar,
@@ -50,14 +50,14 @@ impl ThreadPerTaskExecutorServiceState {
     fn lock_submission(&self) -> MutexGuard<'_, ()> {
         self.submission_lock
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Acquires the termination lock while tolerating poisoned locks.
     fn lock_termination(&self) -> MutexGuard<'_, ()> {
         self.termination_lock
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Wakes termination waiters when shutdown and task completion allow it.
@@ -74,7 +74,7 @@ impl ThreadPerTaskExecutorServiceState {
             guard = self
                 .termination
                 .wait(guard)
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
     }
 }
@@ -130,9 +130,7 @@ impl ExecutorService for ThreadPerTaskExecutorService {
         let (handle, completion) = TaskHandle::completion_pair();
         let state = Arc::clone(&self.state);
         thread::spawn(move || {
-            if completion.start() {
-                completion.complete(run_callable(task));
-            }
+            completion.start_and_complete(|| run_callable(task));
             if state.active_tasks.dec() == 0 {
                 state.notify_if_terminated();
             }

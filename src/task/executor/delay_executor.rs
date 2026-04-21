@@ -81,9 +81,7 @@ impl Executor for DelayExecutor {
             if !delay.is_zero() {
                 thread::sleep(delay);
             }
-            if completion.start() {
-                completion.complete(run_callable(task));
-            }
+            completion.start_and_complete(|| run_callable(task));
         });
         handle
     }

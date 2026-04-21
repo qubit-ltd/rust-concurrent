@@ -729,7 +729,7 @@ impl ThreadPoolInner {
     fn lock_state(&self) -> MutexGuard<'_, ThreadPoolState> {
         self.state
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Submits a job into the queue.
@@ -878,7 +878,7 @@ impl ThreadPoolInner {
             state = self
                 .terminated
                 .wait(state)
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
     }
 
@@ -1086,9 +1086,7 @@ fn run_task<C, R, E>(task: C, completion: TaskCompletion<R, E>)
 where
     C: Callable<R, E>,
 {
-    if completion.start() {
-        completion.complete(run_callable(task));
-    }
+    completion.start_and_complete(|| run_callable(task));
 }
 
 /// Runs a single worker loop until the pool asks it to exit.
@@ -1129,7 +1127,7 @@ fn wait_for_job(inner: &ThreadPoolInner) -> Option<PoolJob> {
                     let (next_state, timeout) = inner
                         .available
                         .wait_timeout(state, keep_alive)
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     state = next_state;
                     state.idle_workers = state
                         .idle_workers
@@ -1147,7 +1145,7 @@ fn wait_for_job(inner: &ThreadPoolInner) -> Option<PoolJob> {
                     state = inner
                         .available
                         .wait(state)
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     state.idle_workers = state
                         .idle_workers
                         .checked_sub(1)

@@ -301,14 +301,14 @@ impl<T> Monitor<T> {
     fn lock_state(&self) -> MutexGuard<'_, T> {
         self.state
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Waits on the condition variable and recovers from poisoning.
     fn wait_state<'a>(&self, guard: MutexGuard<'a, T>) -> MutexGuard<'a, T> {
         self.changed
             .wait(guard)
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 

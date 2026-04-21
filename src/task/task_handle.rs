@@ -17,7 +17,7 @@ use std::{
     },
 };
 
-use qubit_atomic::AtomicBool;
+use qubit_atomic::Atomic;
 
 use crate::lock::Monitor;
 
@@ -47,7 +47,7 @@ pub struct TaskHandle<R, E> {
 /// Shared state used by a task handle and its completing runner.
 struct TaskHandleInner<R, E> {
     state: Monitor<TaskHandleState<R, E>>,
-    done: AtomicBool,
+    done: Atomic<bool>,
 }
 
 /// Mutable completion state protected by the task handle mutex.
@@ -82,7 +82,7 @@ impl<R, E> TaskHandle<R, E> {
                 completed: false,
                 waker: None,
             }),
-            done: AtomicBool::new(false),
+            done: Atomic::new(false),
         });
         let handle = Self {
             inner: Arc::clone(&inner),
@@ -205,6 +205,32 @@ impl<R, E> TaskCompletion<R, E> {
     /// If another path has already completed the task, this result is ignored.
     pub fn complete(&self, result: TaskResult<R, E>) {
         self.finish(result, |_| true);
+    }
+
+    /// Starts the task and completes it with a lazily produced result.
+    ///
+    /// The supplied closure is executed only if this completion endpoint wins
+    /// the start race. If the handle was cancelled first, the closure is not
+    /// called and the existing cancellation result is preserved.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Closure that runs the accepted task and returns its final
+    ///   result.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the closure was executed and its result was published, or
+    /// `false` if the task had already been completed by cancellation.
+    pub fn start_and_complete<F>(&self, task: F) -> bool
+    where
+        F: FnOnce() -> TaskResult<R, E>,
+    {
+        if !self.start() {
+            return false;
+        }
+        self.complete(task());
+        true
     }
 
     /// Cancels the task if it has not started yet.

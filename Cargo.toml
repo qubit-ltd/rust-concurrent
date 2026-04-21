@@ -1,6 +1,6 @@
 [package]
 name = "qubit-concurrent"
-version = "0.6.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -30,7 +30,7 @@ doctest = true
 # Core utilities
 qubit-common = "0.6"
 # Atomic utilities
-qubit-atomic = "0.9"
+qubit-atomic = "0.10"
 # Async runtime
 tokio = { version = "1.5", features = ["sync", "rt"] }
 # Error handling

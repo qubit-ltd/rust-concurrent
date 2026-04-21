@@ -13,8 +13,8 @@ use std::sync::{
 };
 
 use qubit_atomic::{
-    AtomicBool,
-    AtomicCounter,
+    Atomic,
+    AtomicCount,
 };
 use qubit_function::Callable;
 use tokio::{
@@ -22,10 +22,7 @@ use tokio::{
     task::AbortHandle,
 };
 
-use crate::task::{
-    TaskExecutionError,
-    task_runner::run_callable,
-};
+use crate::task::task_runner::run_callable;
 
 use super::{
     ExecutorService,
@@ -37,8 +34,8 @@ use super::{
 /// Shared state for [`TokioExecutorService`].
 #[derive(Default)]
 struct TokioExecutorServiceState {
-    shutdown: AtomicBool,
-    active_tasks: AtomicCounter,
+    shutdown: Atomic<bool>,
+    active_tasks: AtomicCount,
     submission_lock: Mutex<()>,
     abort_handles: Mutex<Vec<AbortHandle>>,
     terminated_notify: Notify,
@@ -49,14 +46,14 @@ impl TokioExecutorServiceState {
     fn lock_submission(&self) -> MutexGuard<'_, ()> {
         self.submission_lock
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Acquires the abort handle list while tolerating poisoned locks.
     fn lock_abort_handles(&self) -> MutexGuard<'_, Vec<AbortHandle>> {
         self.abort_handles
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Wakes termination waiters when shutdown and task completion allow it.
@@ -139,11 +136,9 @@ impl ExecutorService for TokioExecutorService {
         let guard = TokioServiceTaskGuard::new(Arc::clone(&self.state));
         let handle = tokio::spawn(async move {
             let _guard = guard;
-            match tokio::task::spawn_blocking(move || run_callable(task)).await {
-                Ok(result) => result,
-                Err(error) if error.is_cancelled() => Err(TaskExecutionError::Cancelled),
-                Err(_) => Err(TaskExecutionError::Panicked),
-            }
+            tokio::task::spawn_blocking(move || run_callable(task))
+                .await
+                .expect("tokio blocking task should join")
         });
         self.state.lock_abort_handles().push(handle.abort_handle());
         Ok(TokioTaskHandle::new(handle))

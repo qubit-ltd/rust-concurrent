@@ -70,9 +70,7 @@ impl Executor for ThreadPerTaskExecutor {
     {
         let (handle, completion) = TaskHandle::completion_pair();
         thread::spawn(move || {
-            if completion.start() {
-                completion.complete(run_callable(task));
-            }
+            completion.start_and_complete(|| run_callable(task));
         });
         handle
     }

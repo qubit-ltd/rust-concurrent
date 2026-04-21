@@ -299,7 +299,7 @@ where
         R: Runnable<E> + 'static,
         E: Error + Send + Sync + 'static,
     {
-        let boxed = prepare_action.into_box();
+        let mut boxed = prepare_action.into_box();
         self.prepare_action = Some(BoxRunnable::new(move || {
             boxed.run().map_err(|e| Box::new(e) as BoxError)
         }));
@@ -327,7 +327,7 @@ where
         R: Runnable<E> + 'static,
         E: Error + Send + Sync + 'static,
     {
-        let boxed = rollback_prepare_action.into_box();
+        let mut boxed = rollback_prepare_action.into_box();
         self.rollback_prepare_action = Some(BoxRunnable::new(move || {
             boxed.run().map_err(|e| Box::new(e) as BoxError)
         }));
@@ -355,7 +355,7 @@ where
         R: Runnable<E> + 'static,
         E: Error + Send + Sync + 'static,
     {
-        let boxed = commit_prepare_action.into_box();
+        let mut boxed = commit_prepare_action.into_box();
         self.commit_prepare_action = Some(BoxRunnable::new(move || {
             boxed.run().map_err(|e| Box::new(e) as BoxError)
         }));
@@ -488,7 +488,7 @@ where
         }
 
         // Execute prepare action
-        let prepare_completed = if let Some(prepare_action) = self.prepare_action.take() {
+        let prepare_completed = if let Some(mut prepare_action) = self.prepare_action.take() {
             if let Err(e) = prepare_action.run() {
                 if let Some(ref logger) = self.logger {
                     logger.log_prepare_failed(&e);
@@ -553,7 +553,7 @@ where
         }
 
         // Execute prepare action
-        let prepare_completed = if let Some(prepare_action) = self.prepare_action.take() {
+        let prepare_completed = if let Some(mut prepare_action) = self.prepare_action.take() {
             if let Err(e) = prepare_action.run() {
                 if let Some(ref logger) = self.logger {
                     logger.log_prepare_failed(&e);
@@ -599,7 +599,7 @@ where
         E: Error + Send + Sync + 'static,
     {
         if result.is_success() {
-            if let Some(commit_prepare_action) = self.commit_prepare_action.take()
+            if let Some(mut commit_prepare_action) = self.commit_prepare_action.take()
                 && let Err(e) = commit_prepare_action.run()
             {
                 if let Some(ref logger) = self.logger {
@@ -618,7 +618,7 @@ where
             "Condition not met".to_string()
         };
 
-        if let Some(rollback_prepare_action) = self.rollback_prepare_action.take()
+        if let Some(mut rollback_prepare_action) = self.rollback_prepare_action.take()
             && let Err(e) = rollback_prepare_action.run()
         {
             if let Some(ref logger) = self.logger {

@@ -40,7 +40,7 @@ log = "0.4"
 # High-performance synchronization primitives
 parking_lot = "0.12"
 # Functional programming utilities
-qubit-function = "0.10"
+qubit-function = "0.10.3"
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }

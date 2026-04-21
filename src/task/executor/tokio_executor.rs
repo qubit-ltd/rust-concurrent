@@ -95,7 +95,7 @@ impl Executor for TokioExecutor {
     /// A [`TokioExecution`] that implements [`Future`](std::future::Future) with
     /// [`Output`](std::future::Future::Output) `= Result<R, E>`. Await it to obtain the
     /// callable's result.
-    fn call<C, R, E>(&self, task: C) -> Self::Execution<R, E>
+    fn call<C, R, E>(&self, mut task: C) -> Self::Execution<R, E>
     where
         C: Callable<R, E> + Send + 'static,
         R: Send + 'static,

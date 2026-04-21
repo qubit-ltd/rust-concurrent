@@ -26,7 +26,7 @@ impl Executor for DirectExecutor {
 
     /// Executes the callable inline and returns its result.
     #[inline]
-    fn call<C, R, E>(&self, task: C) -> Self::Execution<R, E>
+    fn call<C, R, E>(&self, mut task: C) -> Self::Execution<R, E>
     where
         C: Callable<R, E> + Send + 'static,
         R: Send + 'static,

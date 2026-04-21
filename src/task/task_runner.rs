@@ -28,7 +28,7 @@ use super::{
 ///
 /// `Ok(R)` if the callable returns success, `Failed(E)` if the callable
 /// returns `Err(E)`, or `Panicked` if the callable panics.
-pub(crate) fn run_callable<C, R, E>(task: C) -> TaskResult<R, E>
+pub(crate) fn run_callable<C, R, E>(mut task: C) -> TaskResult<R, E>
 where
     C: Callable<R, E>,
 {

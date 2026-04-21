@@ -63,6 +63,7 @@ pub trait ExecutorService: Send + Sync {
         T: Runnable<E> + Send + 'static,
         E: Send + 'static,
     {
+        let mut task = task;
         self.submit_callable(move || task.run())
     }
 

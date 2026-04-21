@@ -32,7 +32,7 @@ Qubit Concurrent provides easy-to-use wrappers around both synchronous and async
 - **Executor**: Execution strategy trait under `task::executor`, with `execute` for `Runnable` tasks and `call` for `Callable` tasks
 - **ExecutorService**: Managed task service under `task::service`, with `submit`, `submit_callable`, and graceful shutdown support
 - **FutureExecutor**: Executor specialization whose execution carrier is a future
-- **Runnable / Callable**: Fallible one-time task abstractions provided by `qubit-function`
+- **Runnable / Callable**: Fallible reusable task abstractions provided by `qubit-function`
 - **Clear acceptance semantics**: `ExecutorService` acceptance is separate from task success
 
 ### 🔁 **Double-checked locking**
@@ -410,8 +410,8 @@ Service-related types live under `task::service`.
 Task abstractions provided by `qubit-function`.
 
 **Methods:**
-- [`run(self) -> Result<(), E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Runnable.html#tymethod.run) - Execute a fallible one-time action
-- [`call(self) -> Result<R, E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Callable.html#tymethod.call) - Execute a fallible one-time computation
+- [`run(&mut self) -> Result<(), E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Runnable.html#tymethod.run) - Execute a fallible reusable action
+- [`call(&mut self) -> Result<R, E>`](https://docs.rs/qubit-function/latest/qubit_function/trait.Callable.html#tymethod.call) - Execute a fallible reusable computation
 - [`into_box()`](https://docs.rs/qubit-function/latest/qubit_function/trait.Runnable.html#method.into_box) - Convert a task into `BoxRunnable` or `BoxCallable`
 
 ### DoubleCheckedLock

@@ -58,10 +58,10 @@ fn test_direct_executor_call_returns_value() {
 
 #[test]
 fn test_qubit_function_task_types_remain_compatible() {
-    let runnable: BoxRunnable<io::Error> = Runnable::into_box(|| Ok::<(), io::Error>(()));
+    let mut runnable: BoxRunnable<io::Error> = Runnable::into_box(|| Ok::<(), io::Error>(()));
     runnable.run().expect("boxed runnable should run");
 
-    let callable: BoxCallable<i32, io::Error> = Callable::into_box(|| Ok::<i32, io::Error>(42));
+    let mut callable: BoxCallable<i32, io::Error> = Callable::into_box(|| Ok::<i32, io::Error>(42));
     assert_eq!(
         callable
             .call()

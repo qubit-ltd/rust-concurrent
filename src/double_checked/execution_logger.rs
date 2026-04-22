@@ -77,7 +77,7 @@ impl ExecutionLogger {
     ///
     /// This method writes through the global `log` facade when enabled.
     #[inline]
-    pub fn log_unmet_message(&self) {
+    pub fn log_unmet(&self) {
         if !self.enabled {
             return;
         }

@@ -30,6 +30,8 @@ use qubit_function::{
 };
 
 use super::{
+    executor_builder::ExecutorBuilder,
+    executor_ready_builder::ExecutorReadyBuilder,
     ExecutionContext,
     ExecutionLogger,
     ExecutionResult,
@@ -87,42 +89,17 @@ pub struct DoubleCheckedLockExecutor<L = (), T = ()> {
     _phantom: PhantomData<fn() -> T>,
 }
 
-impl<L, T> DoubleCheckedLockExecutor<L, T> {
-    /// Assembles an executor from builder state (lock, tester, optional hooks).
-    ///
-    /// # Parameters
-    ///
-    /// * `lock` - Lock protecting the target data.
-    /// * `tester` - Condition evaluated before and after lock acquisition.
-    /// * `logger` - Optional logger used for unmet conditions and prepare
-    ///   lifecycle failures.
-    /// * `prepare_action` - Optional action run before lock acquisition.
-    /// * `rollback_prepare_action` - Optional action run when a completed
-    ///   prepare action must be rolled back.
-    /// * `commit_prepare_action` - Optional action run when a completed
-    ///   prepare action should be committed.
+impl DoubleCheckedLockExecutor<(), ()> {
+    /// Creates a builder for a reusable double-checked lock executor.
     ///
     /// # Returns
     ///
-    /// A reusable executor containing the supplied builder state.
+    /// A builder in the initial state. Attach a lock with
+    /// [`ExecutorBuilder::on`], then configure a tester with
+    /// [`ExecutorLockBuilder::when`].
     #[inline]
-    pub(in crate::double_checked) fn from_builder_state(
-        lock: L,
-        tester: ArcTester,
-        logger: Option<ExecutionLogger>,
-        prepare_action: Option<ArcRunnable<String>>,
-        rollback_prepare_action: Option<ArcRunnable<String>>,
-        commit_prepare_action: Option<ArcRunnable<String>>,
-    ) -> Self {
-        Self {
-            lock,
-            tester,
-            logger,
-            prepare_action,
-            rollback_prepare_action,
-            commit_prepare_action,
-            _phantom: PhantomData,
-        }
+    pub fn builder() -> ExecutorBuilder {
+        ExecutorBuilder::default()
     }
 }
 
@@ -130,6 +107,29 @@ impl<L, T> DoubleCheckedLockExecutor<L, T>
 where
     L: Lock<T>,
 {
+    /// Assembles an executor from the ready builder state.
+    ///
+    /// # Parameters
+    ///
+    /// * `builder` - Ready builder carrying the lock, tester, optional logger,
+    ///   and prepare lifecycle callbacks.
+    ///
+    /// # Returns
+    ///
+    /// A reusable executor containing the supplied builder state.
+    #[inline]
+    pub fn new(builder: ExecutorReadyBuilder<L, T>) -> Self {
+        Self {
+            lock: builder.lock,
+            tester: builder.tester,
+            logger: builder.logger,
+            prepare_action: builder.prepare_action,
+            rollback_prepare_action: builder.rollback_prepare_action,
+            commit_prepare_action: builder.commit_prepare_action,
+            _phantom: builder._phantom,
+        }
+    }
+
     /// Executes a zero-argument callable while holding the write lock.
     ///
     /// This method is the [`Executor`] style API. Use [`Self::call_with`] when
@@ -150,7 +150,9 @@ where
         R: Send + 'static,
         E: Display + Send + 'static,
     {
-        self.call_callable(task)
+        let mut task = task;
+        let result = self.execute_with_write_lock(move |_data| task.call());
+        ExecutionContext::new(result)
     }
 
     /// Executes a zero-argument runnable while holding the write lock.
@@ -216,27 +218,6 @@ where
     {
         let mut task = task;
         let result = self.execute_with_write_lock(move |data| task.run_with(data));
-        ExecutionContext::new(result)
-    }
-
-    /// Executes a zero-argument callable through the double-checked sequence.
-    ///
-    /// # Parameters
-    ///
-    /// * `task` - Callable to run when both condition checks pass.
-    ///
-    /// # Returns
-    ///
-    /// An [`ExecutionContext`] containing success, unmet-condition, or failure
-    /// information.
-    fn call_callable<C, R, E>(&self, task: C) -> ExecutionContext<R, E>
-    where
-        C: Callable<R, E> + Send + 'static,
-        R: Send + 'static,
-        E: Display + Send + 'static,
-    {
-        let mut task = task;
-        let result = self.execute_with_write_lock(move |_data| task.call());
         ExecutionContext::new(result)
     }
 
@@ -370,7 +351,7 @@ where
     /// This method writes through the configured logger, if any.
     fn log_unmet_condition(&self) {
         if let Some(ref logger) = self.logger {
-            logger.log_unmet_message();
+            logger.log_unmet();
         }
     }
 }
@@ -402,6 +383,6 @@ where
         R: Send + 'static,
         E: Display + Send + 'static,
     {
-        self.call_callable(task)
+        DoubleCheckedLockExecutor::call(self, task)
     }
 }

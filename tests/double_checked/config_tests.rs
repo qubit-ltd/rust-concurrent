@@ -73,7 +73,7 @@ mod tests {
             let mut logger = ExecutionLogger::new(log::Level::Info, "disabled");
             logger.enabled = false;
 
-            logger.log_unmet_message();
+            logger.log_unmet();
             logger.log_prepare_failed("prepare");
             logger.log_prepare_commit_failed("commit");
             logger.log_prepare_rollback_failed("rollback");
@@ -83,7 +83,7 @@ mod tests {
         fn test_enabled_execution_logger_logs_all_methods() {
             let logger = ExecutionLogger::new(log::Level::Info, "enabled");
 
-            logger.log_unmet_message();
+            logger.log_unmet();
             logger.log_prepare_failed("prepare");
             logger.log_prepare_commit_failed("commit");
             logger.log_prepare_rollback_failed("rollback");

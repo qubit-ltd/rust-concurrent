@@ -16,7 +16,9 @@
 //! Haixing Hu
 
 pub mod double_checked_lock_executor;
-pub mod double_checked_lock_executor_builder;
+pub mod executor_builder;
+pub mod executor_lock_builder;
+pub mod executor_ready_builder;
 pub mod execution_context;
 pub mod execution_logger;
 pub mod execution_result;
@@ -24,11 +26,9 @@ pub mod executor_config;
 pub mod executor_error;
 
 pub use double_checked_lock_executor::DoubleCheckedLockExecutor;
-pub use double_checked_lock_executor_builder::{
-    DoubleCheckedLockExecutorBuilder,
-    DoubleCheckedLockExecutorLockBuilder,
-    DoubleCheckedLockExecutorReadyBuilder,
-};
+pub use executor_builder::ExecutorBuilder;
+pub use executor_lock_builder::ExecutorLockBuilder;
+pub use executor_ready_builder::ExecutorReadyBuilder;
 pub use execution_context::ExecutionContext;
 pub use execution_logger::ExecutionLogger;
 pub use execution_result::ExecutionResult;

@@ -17,9 +17,9 @@ pub mod task;
 
 pub use double_checked::{
     DoubleCheckedLockExecutor,
-    DoubleCheckedLockExecutorBuilder,
-    DoubleCheckedLockExecutorLockBuilder,
-    DoubleCheckedLockExecutorReadyBuilder,
+    ExecutorBuilder,
+    ExecutorLockBuilder,
+    ExecutorReadyBuilder,
     ExecutionContext,
     ExecutionLogger,
     ExecutionResult,

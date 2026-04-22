@@ -76,6 +76,14 @@ where
     E: fmt::Display,
 {
     /// Formats this task execution error for users.
+    ///
+    /// # Parameters
+    ///
+    /// * `f` - Formatter receiving the human-readable error text.
+    ///
+    /// # Returns
+    ///
+    /// [`fmt::Result`] from writing the formatted error text.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Failed(err) => write!(f, "task failed: {err}"),

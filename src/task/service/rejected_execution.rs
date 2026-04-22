@@ -46,6 +46,14 @@ impl PartialEq for RejectedExecution {
     ///
     /// Worker spawn failures compare equal by variant because [`io::Error`]
     /// does not provide value equality.
+    ///
+    /// # Parameters
+    ///
+    /// * `other` - Rejection value to compare with this value.
+    ///
+    /// # Returns
+    ///
+    /// `true` when both values have the same rejection category.
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),

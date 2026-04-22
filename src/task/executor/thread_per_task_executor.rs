@@ -62,6 +62,15 @@ impl Executor for ThreadPerTaskExecutor {
         E: std::fmt::Display + Send + 'static;
 
     /// Spawns one OS thread for the callable and returns a handle to its result.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to run on a dedicated OS thread.
+    ///
+    /// # Returns
+    ///
+    /// A [`TaskHandle`] that can block or await the spawned task's final
+    /// result.
     fn call<C, R, E>(&self, task: C) -> Self::Execution<R, E>
     where
         C: Callable<R, E> + Send + 'static,

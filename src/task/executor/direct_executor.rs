@@ -25,6 +25,14 @@ impl Executor for DirectExecutor {
         E: std::fmt::Display + Send + 'static;
 
     /// Executes the callable inline and returns its result.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to run on the caller thread.
+    ///
+    /// # Returns
+    ///
+    /// The exact `Result<R, E>` returned by the callable.
     #[inline]
     fn call<C, R, E>(&self, mut task: C) -> Self::Execution<R, E>
     where

@@ -38,15 +38,24 @@ use super::{
 /// Shared state for [`ThreadPerTaskExecutorService`].
 #[derive(Default)]
 struct ThreadPerTaskExecutorServiceState {
+    /// Whether shutdown has been requested.
     shutdown: Atomic<bool>,
+    /// Number of accepted OS-thread tasks that have not completed.
     active_tasks: AtomicCount,
+    /// Serializes task submission and shutdown transitions.
     submission_lock: Mutex<()>,
+    /// Mutex paired with the termination condition variable.
     termination_lock: Mutex<()>,
+    /// Condition variable used to wait for service termination.
     termination: Condvar,
 }
 
 impl ThreadPerTaskExecutorServiceState {
     /// Acquires the submission lock while tolerating poisoned locks.
+    ///
+    /// # Returns
+    ///
+    /// A guard for the submission lock.
     fn lock_submission(&self) -> MutexGuard<'_, ()> {
         self.submission_lock
             .lock()
@@ -54,6 +63,10 @@ impl ThreadPerTaskExecutorServiceState {
     }
 
     /// Acquires the termination lock while tolerating poisoned locks.
+    ///
+    /// # Returns
+    ///
+    /// A guard for the mutex paired with the termination condition variable.
     fn lock_termination(&self) -> MutexGuard<'_, ()> {
         self.termination_lock
             .lock()
@@ -86,6 +99,7 @@ impl ThreadPerTaskExecutorServiceState {
 /// running OS threads.
 #[derive(Default, Clone)]
 pub struct ThreadPerTaskExecutorService {
+    /// Shared service state used by all clones of this service.
     state: Arc<ThreadPerTaskExecutorServiceState>,
 }
 
@@ -114,6 +128,19 @@ impl ExecutorService for ThreadPerTaskExecutorService {
         Self: 'a;
 
     /// Accepts a callable and starts it on a dedicated OS thread.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to execute on a new OS thread.
+    ///
+    /// # Returns
+    ///
+    /// A [`TaskHandle`] for the accepted task.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] if shutdown has already been
+    /// requested before the task is accepted.
     fn submit_callable<C, R, E>(&self, task: C) -> Result<Self::Handle<R, E>, RejectedExecution>
     where
         C: Callable<R, E> + Send + 'static,
@@ -139,6 +166,8 @@ impl ExecutorService for ThreadPerTaskExecutorService {
     }
 
     /// Stops accepting new tasks.
+    ///
+    /// Already accepted threads are allowed to finish.
     fn shutdown(&self) {
         let _guard = self.state.lock_submission();
         self.state.shutdown.store(true);
@@ -148,6 +177,11 @@ impl ExecutorService for ThreadPerTaskExecutorService {
     /// Stops accepting new tasks and reports currently running work.
     ///
     /// Running OS threads cannot be forcefully stopped by this service.
+    ///
+    /// # Returns
+    ///
+    /// A report with zero queued tasks, the observed active thread count, and
+    /// zero cancelled tasks.
     fn shutdown_now(&self) -> ShutdownReport {
         let _guard = self.state.lock_submission();
         self.state.shutdown.store(true);
@@ -170,6 +204,11 @@ impl ExecutorService for ThreadPerTaskExecutorService {
     ///
     /// This future blocks the polling thread while waiting on a condition
     /// variable.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves after shutdown has been requested and all
+    /// accepted OS-thread tasks have completed.
     fn await_termination(&self) -> Self::Termination<'_> {
         Box::pin(async move {
             self.state.wait_for_termination();

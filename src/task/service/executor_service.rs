@@ -57,6 +57,11 @@ pub trait ExecutorService: Send + Sync {
     /// acceptance; it does not report task start or task success. Returns
     /// `Err(RejectedExecution)` if the service refuses the task before
     /// accepting it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution`] when the service refuses the task before
+    /// accepting it.
     #[inline]
     fn submit<T, E>(&self, task: T) -> Result<Self::Handle<(), E>, RejectedExecution>
     where
@@ -80,6 +85,11 @@ pub trait ExecutorService: Send + Sync {
     /// acceptance; task success, task failure, panic, or cancellation must be
     /// observed through the returned handle. Returns `Err(RejectedExecution)` if
     /// the service refuses the task before accepting it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution`] when the service refuses the task before
+    /// accepting it.
     fn submit_callable<C, R, E>(&self, task: C) -> Result<Self::Handle<R, E>, RejectedExecution>
     where
         C: Callable<R, E> + Send + 'static,

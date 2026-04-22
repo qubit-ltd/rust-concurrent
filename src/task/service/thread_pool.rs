@@ -59,6 +59,7 @@ const DEFAULT_KEEP_ALIVE: Duration = Duration::from_secs(60);
 ///
 /// Haixing Hu
 pub struct ThreadPool {
+    /// Shared pool state and worker coordination primitives.
     inner: Arc<ThreadPoolInner>,
 }
 
@@ -71,8 +72,11 @@ impl ThreadPool {
     ///
     /// # Returns
     ///
-    /// `Ok(ThreadPool)` if all workers are spawned successfully. Returns
-    /// [`ThreadPoolBuildError`] if the configuration is invalid or a worker
+    /// `Ok(ThreadPool)` if all workers are spawned successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError`] if `worker_count` is zero or a worker
     /// thread cannot be spawned.
     #[inline]
     pub fn new(worker_count: usize) -> Result<Self, ThreadPoolBuildError> {
@@ -156,9 +160,13 @@ impl ThreadPool {
     ///
     /// # Returns
     ///
-    /// `Ok(true)` if a worker was started, `Ok(false)` if no core worker was
-    /// needed, or `Err(RejectedExecution)` if the pool is shut down or worker
-    /// creation fails.
+    /// `Ok(true)` if a worker was started, or `Ok(false)` if no core worker
+    /// was needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] if the pool is shut down, or
+    /// [`RejectedExecution::WorkerSpawnFailed`] if worker creation fails.
     #[inline]
     pub fn prestart_core_thread(&self) -> Result<bool, RejectedExecution> {
         self.inner.prestart_core_thread()
@@ -168,8 +176,12 @@ impl ThreadPool {
     ///
     /// # Returns
     ///
-    /// The number of workers started, or `Err(RejectedExecution)` if the pool
-    /// is shut down or worker creation fails.
+    /// The number of workers started.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] if the pool is shut down, or
+    /// [`RejectedExecution::WorkerSpawnFailed`] if worker creation fails.
     #[inline]
     pub fn prestart_all_core_threads(&self) -> Result<usize, RejectedExecution> {
         self.inner.prestart_all_core_threads()
@@ -188,8 +200,12 @@ impl ThreadPool {
     ///
     /// # Returns
     ///
-    /// `Ok(())` if the size is accepted. Returns [`ThreadPoolBuildError`] when
-    /// the new core size would exceed the maximum size.
+    /// `Ok(())` if the size is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError::CorePoolSizeExceedsMaximum`] when the
+    /// new core size would exceed the current maximum size.
     pub fn set_core_pool_size(&self, core_pool_size: usize) -> Result<(), ThreadPoolBuildError> {
         self.inner.set_core_pool_size(core_pool_size)
     }
@@ -205,8 +221,13 @@ impl ThreadPool {
     ///
     /// # Returns
     ///
-    /// `Ok(())` if the size is accepted. Returns [`ThreadPoolBuildError`] when
-    /// the maximum size is zero or smaller than the core size.
+    /// `Ok(())` if the size is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError::ZeroMaximumPoolSize`] when the maximum
+    /// size is zero, or [`ThreadPoolBuildError::CorePoolSizeExceedsMaximum`]
+    /// when it would be smaller than the current core size.
     pub fn set_maximum_pool_size(
         &self,
         maximum_pool_size: usize,
@@ -222,8 +243,12 @@ impl ThreadPool {
     ///
     /// # Returns
     ///
-    /// `Ok(())` if the timeout is accepted. Returns [`ThreadPoolBuildError`]
-    /// when the duration is zero.
+    /// `Ok(())` if the timeout is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError::ZeroKeepAlive`] when `keep_alive` is
+    /// zero.
     pub fn set_keep_alive(&self, keep_alive: Duration) -> Result<(), ThreadPoolBuildError> {
         self.inner.set_keep_alive(keep_alive)
     }
@@ -242,6 +267,21 @@ impl ThreadPool {
     /// This low-level hook is intended for higher-level service crates that
     /// need to attach their own lifecycle callbacks while still using this
     /// pool's queueing, cancellation, and shutdown behavior.
+    ///
+    /// # Parameters
+    ///
+    /// * `job` - Type-erased job containing run and cancellation callbacks.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the job is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] after shutdown, returns
+    /// [`RejectedExecution::Saturated`] when a bounded pool cannot accept more
+    /// work, or returns [`RejectedExecution::WorkerSpawnFailed`] when the pool
+    /// fails to create a required worker.
     pub fn submit_job(&self, job: PoolJob) -> Result<(), RejectedExecution> {
         self.inner.submit(job)
     }
@@ -267,6 +307,21 @@ impl ExecutorService for ThreadPool {
         Self: 'a;
 
     /// Accepts a callable and queues it for pool workers.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to execute on a pool worker.
+    ///
+    /// # Returns
+    ///
+    /// A [`TaskHandle`] for the accepted task.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] after shutdown, returns
+    /// [`RejectedExecution::Saturated`] when the bounded pool cannot accept
+    /// more work, or returns [`RejectedExecution::WorkerSpawnFailed`] when a
+    /// required worker cannot be created.
     fn submit_callable<C, R, E>(&self, task: C) -> Result<Self::Handle<R, E>, RejectedExecution>
     where
         C: Callable<R, E> + Send + 'static,
@@ -286,12 +341,19 @@ impl ExecutorService for ThreadPool {
     }
 
     /// Stops accepting new tasks after already queued work is drained.
+    ///
+    /// Queued and running tasks remain eligible to complete normally.
     #[inline]
     fn shutdown(&self) {
         self.inner.shutdown();
     }
 
     /// Stops accepting tasks and cancels queued tasks that have not started.
+    ///
+    /// # Returns
+    ///
+    /// A report containing the number of queued jobs cancelled and the number
+    /// of jobs running at the time of the request.
     #[inline]
     fn shutdown_now(&self) -> ShutdownReport {
         self.inner.shutdown_now()
@@ -313,6 +375,11 @@ impl ExecutorService for ThreadPool {
     ///
     /// This future blocks the polling thread while waiting on a condition
     /// variable.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves when shutdown has been requested, the queue is
+    /// empty, no task is running, and all worker loops have exited.
     fn await_termination(&self) -> Self::Termination<'_> {
         Box::pin(async move {
             self.inner.wait_for_termination();
@@ -330,13 +397,21 @@ impl ExecutorService for ThreadPool {
 /// Haixing Hu
 #[derive(Debug, Clone)]
 pub struct ThreadPoolBuilder {
+    /// Core number of workers created before new submissions are queued.
     core_pool_size: usize,
+    /// Maximum number of live workers the pool may create.
     maximum_pool_size: usize,
+    /// Optional maximum number of jobs that may wait in the queue.
     queue_capacity: Option<usize>,
+    /// Prefix used when naming worker threads.
     thread_name_prefix: String,
+    /// Optional stack size in bytes for worker threads.
     stack_size: Option<usize>,
+    /// Idle timeout for workers allowed to retire.
     keep_alive: Duration,
+    /// Whether core workers may retire after the keep-alive timeout.
     allow_core_thread_timeout: bool,
+    /// Whether [`Self::build`] should start all core workers eagerly.
     prestart_core_threads: bool,
 }
 
@@ -503,9 +578,13 @@ impl ThreadPoolBuilder {
     ///
     /// # Returns
     ///
-    /// `Ok(ThreadPool)` if all workers are spawned successfully. Returns
-    /// [`ThreadPoolBuildError`] if the configuration is invalid or a worker
-    /// thread cannot be spawned.
+    /// `Ok(ThreadPool)` if the configuration is valid and all requested
+    /// prestarted workers are spawned successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError`] if the configuration is invalid or a
+    /// prestarted worker thread cannot be spawned.
     pub fn build(self) -> Result<ThreadPool, ThreadPoolBuildError> {
         self.validate()?;
         let prestart_core_threads = self.prestart_core_threads;
@@ -527,6 +606,16 @@ impl ThreadPoolBuilder {
     }
 
     /// Validates this builder configuration.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when all configured values are internally consistent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError`] for zero maximum size, core size larger
+    /// than maximum size, zero bounded queue capacity, zero stack size, or zero
+    /// keep-alive timeout.
     fn validate(&self) -> Result<(), ThreadPoolBuildError> {
         if self.maximum_pool_size == 0 {
             return Err(ThreadPoolBuildError::ZeroMaximumPoolSize);
@@ -552,6 +641,11 @@ impl ThreadPoolBuilder {
 
 impl Default for ThreadPoolBuilder {
     /// Creates a builder with CPU parallelism defaults.
+    ///
+    /// # Returns
+    ///
+    /// A builder configured with CPU parallelism for both core and maximum
+    /// sizes, an unbounded queue, and the default keep-alive timeout.
     fn default() -> Self {
         let worker_count = default_worker_count();
         Self {
@@ -615,6 +709,14 @@ pub enum ThreadPoolBuildError {
 
 impl ThreadPoolBuildError {
     /// Converts a runtime worker-spawn rejection into a build error.
+    ///
+    /// # Parameters
+    ///
+    /// * `error` - Rejection produced while prestarting workers during build.
+    ///
+    /// # Returns
+    ///
+    /// A build error carrying equivalent failure context.
     fn from_rejected_execution(error: RejectedExecution) -> Self {
         match error {
             RejectedExecution::WorkerSpawnFailed { source } => Self::SpawnWorker {
@@ -680,26 +782,46 @@ pub struct ThreadPoolStats {
 
 /// Immutable and initial mutable configuration used by a thread pool.
 struct ThreadPoolConfig {
+    /// Initial core worker count.
     core_pool_size: usize,
+    /// Initial maximum worker count.
     maximum_pool_size: usize,
+    /// Optional maximum number of queued jobs.
     queue_capacity: Option<usize>,
+    /// Prefix used for worker thread names.
     thread_name_prefix: String,
+    /// Optional stack size in bytes for worker threads.
     stack_size: Option<usize>,
+    /// Idle timeout for workers allowed to retire.
     keep_alive: Duration,
+    /// Whether idle core workers may also retire.
     allow_core_thread_timeout: bool,
 }
 
 /// Shared state for a thread pool.
 struct ThreadPoolInner {
+    /// Mutable pool state protected by a mutex.
     state: Mutex<ThreadPoolState>,
+    /// Condition variable notified when jobs arrive or worker policy changes.
     available: Condvar,
+    /// Condition variable notified when the pool reaches termination.
     terminated: Condvar,
+    /// Prefix used for naming newly spawned workers.
     thread_name_prefix: String,
+    /// Optional stack size in bytes for newly spawned workers.
     stack_size: Option<usize>,
 }
 
 impl ThreadPoolInner {
     /// Creates shared state for a thread pool.
+    ///
+    /// # Parameters
+    ///
+    /// * `config` - Initial immutable and mutable pool configuration.
+    ///
+    /// # Returns
+    ///
+    /// A shared-state object ready to accept worker and queue operations.
     fn new(config: ThreadPoolConfig) -> Self {
         Self {
             state: Mutex::new(ThreadPoolState {
@@ -726,6 +848,10 @@ impl ThreadPoolInner {
     }
 
     /// Acquires the pool state while tolerating poisoned locks.
+    ///
+    /// # Returns
+    ///
+    /// A mutex guard for the mutable pool state.
     fn lock_state(&self) -> MutexGuard<'_, ThreadPoolState> {
         self.state
             .lock()
@@ -733,6 +859,21 @@ impl ThreadPoolInner {
     }
 
     /// Submits a job into the queue.
+    ///
+    /// # Parameters
+    ///
+    /// * `job` - Type-erased job to execute or cancel later.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the job is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] after shutdown, returns
+    /// [`RejectedExecution::Saturated`] when the queue and worker capacity are
+    /// full, or returns [`RejectedExecution::WorkerSpawnFailed`] if a required
+    /// worker cannot be created.
     fn submit(self: &Arc<Self>, job: PoolJob) -> Result<(), RejectedExecution> {
         let mut state = self.lock_state();
         if !state.lifecycle.is_running() {
@@ -772,6 +913,17 @@ impl ThreadPoolInner {
     }
 
     /// Starts one missing core worker.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` when a worker was spawned, or `Ok(false)` when the core
+    /// worker count is already satisfied.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] after shutdown or
+    /// [`RejectedExecution::WorkerSpawnFailed`] if the worker cannot be
+    /// created.
     fn prestart_core_thread(self: &Arc<Self>) -> Result<bool, RejectedExecution> {
         let mut state = self.lock_state();
         if !state.lifecycle.is_running() {
@@ -785,6 +937,15 @@ impl ThreadPoolInner {
     }
 
     /// Starts all missing core workers.
+    ///
+    /// # Returns
+    ///
+    /// The number of workers started.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution`] if shutdown is observed or a worker cannot
+    /// be created.
     fn prestart_all_core_threads(self: &Arc<Self>) -> Result<usize, RejectedExecution> {
         let mut started = 0;
         while self.prestart_core_thread()? {
@@ -794,6 +955,20 @@ impl ThreadPoolInner {
     }
 
     /// Spawns a worker while the caller holds the pool state lock.
+    ///
+    /// # Parameters
+    ///
+    /// * `state` - Locked mutable pool state to update while spawning.
+    /// * `first_task` - Optional first job assigned directly to the new worker.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the worker thread is spawned.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::WorkerSpawnFailed`] if
+    /// [`thread::Builder::spawn`] fails.
     fn spawn_worker_locked(
         self: &Arc<Self>,
         state: &mut ThreadPoolState,
@@ -831,6 +1006,8 @@ impl ThreadPoolInner {
     }
 
     /// Requests graceful shutdown.
+    ///
+    /// The pool rejects later submissions but lets queued work drain.
     fn shutdown(&self) {
         let mut state = self.lock_state();
         if state.lifecycle.is_running() {
@@ -841,6 +1018,11 @@ impl ThreadPoolInner {
     }
 
     /// Requests abrupt shutdown and cancels queued jobs.
+    ///
+    /// # Returns
+    ///
+    /// A report containing queued jobs cancelled and jobs running at the time
+    /// of the request.
     fn shutdown_now(&self) -> ShutdownReport {
         let (jobs, report) = {
             let mut state = self.lock_state();
@@ -862,16 +1044,28 @@ impl ThreadPoolInner {
     }
 
     /// Returns whether shutdown has been requested.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the pool is no longer in the running lifecycle state.
     fn is_shutdown(&self) -> bool {
         !self.lock_state().lifecycle.is_running()
     }
 
     /// Returns whether the pool is fully terminated.
+    ///
+    /// # Returns
+    ///
+    /// `true` if shutdown has started and no queued, running, or live worker
+    /// state remains.
     fn is_terminated(&self) -> bool {
         self.lock_state().is_terminated()
     }
 
     /// Blocks the current thread until this pool is terminated.
+    ///
+    /// This method waits on a condition variable and therefore blocks the
+    /// calling thread.
     fn wait_for_termination(&self) {
         let mut state = self.lock_state();
         while !state.is_terminated() {
@@ -883,6 +1077,10 @@ impl ThreadPoolInner {
     }
 
     /// Returns a point-in-time pool snapshot.
+    ///
+    /// # Returns
+    ///
+    /// A snapshot built while holding the pool state lock.
     fn stats(&self) -> ThreadPoolStats {
         let state = self.lock_state();
         ThreadPoolStats {
@@ -901,6 +1099,19 @@ impl ThreadPoolInner {
     }
 
     /// Updates the core pool size.
+    ///
+    /// # Parameters
+    ///
+    /// * `core_pool_size` - New core worker count.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError::CorePoolSizeExceedsMaximum`] when the
+    /// new core size is greater than the current maximum size.
     fn set_core_pool_size(
         self: &Arc<Self>,
         core_pool_size: usize,
@@ -918,6 +1129,20 @@ impl ThreadPoolInner {
     }
 
     /// Updates the maximum pool size.
+    ///
+    /// # Parameters
+    ///
+    /// * `maximum_pool_size` - New maximum worker count.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError::ZeroMaximumPoolSize`] for zero, or
+    /// [`ThreadPoolBuildError::CorePoolSizeExceedsMaximum`] when the current
+    /// core size is greater than the new maximum size.
     fn set_maximum_pool_size(
         self: &Arc<Self>,
         maximum_pool_size: usize,
@@ -938,6 +1163,19 @@ impl ThreadPoolInner {
     }
 
     /// Updates the worker keep-alive timeout.
+    ///
+    /// # Parameters
+    ///
+    /// * `keep_alive` - New idle timeout.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the timeout is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPoolBuildError::ZeroKeepAlive`] when the duration is
+    /// zero.
     fn set_keep_alive(&self, keep_alive: Duration) -> Result<(), ThreadPoolBuildError> {
         if keep_alive.is_zero() {
             return Err(ThreadPoolBuildError::ZeroKeepAlive);
@@ -949,6 +1187,10 @@ impl ThreadPoolInner {
     }
 
     /// Updates whether idle core workers may time out.
+    ///
+    /// # Parameters
+    ///
+    /// * `allow` - Whether idle core workers may retire after keep-alive.
     fn allow_core_thread_timeout(&self, allow: bool) {
         let mut state = self.lock_state();
         state.allow_core_thread_timeout = allow;
@@ -956,6 +1198,10 @@ impl ThreadPoolInner {
     }
 
     /// Notifies termination waiters when the state is terminal.
+    ///
+    /// # Parameters
+    ///
+    /// * `state` - Current pool state observed while holding the state lock.
     fn notify_if_terminated(&self, state: &ThreadPoolState) {
         if state.is_terminated() {
             self.terminated.notify_all();
@@ -965,30 +1211,53 @@ impl ThreadPoolInner {
 
 /// Mutable pool state protected by [`ThreadPoolInner::state`].
 struct ThreadPoolState {
+    /// Current lifecycle state controlling submissions and worker exits.
     lifecycle: ThreadPoolLifecycle,
+    /// FIFO queue of accepted jobs waiting for a worker.
     queue: VecDeque<PoolJob>,
+    /// Optional maximum number of queued jobs.
     queue_capacity: Option<usize>,
+    /// Number of jobs currently held by workers.
     running_tasks: usize,
+    /// Number of worker loops that have not exited.
     live_workers: usize,
+    /// Number of live workers currently waiting for work.
     idle_workers: usize,
+    /// Total number of jobs accepted since pool creation.
     submitted_tasks: usize,
+    /// Total number of worker-held jobs completed since pool creation.
     completed_tasks: usize,
+    /// Total number of queued jobs cancelled by abrupt shutdown.
     cancelled_tasks: usize,
+    /// Current core worker count.
     core_pool_size: usize,
+    /// Current maximum worker count.
     maximum_pool_size: usize,
+    /// Current idle timeout for workers allowed to retire.
     keep_alive: Duration,
+    /// Whether core workers are allowed to time out while idle.
     allow_core_thread_timeout: bool,
+    /// Index assigned to the next spawned worker.
     next_worker_index: usize,
 }
 
 impl ThreadPoolState {
     /// Returns whether the queue is currently full.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the queue has a configured capacity and has reached it.
     fn is_saturated(&self) -> bool {
         self.queue_capacity
             .is_some_and(|capacity| self.queue.len() >= capacity)
     }
 
     /// Returns whether the service lifecycle is fully terminated.
+    ///
+    /// # Returns
+    ///
+    /// `true` after shutdown has started, the queue is empty, no jobs are
+    /// running, and no workers remain live.
     fn is_terminated(&self) -> bool {
         !self.lifecycle.is_running()
             && self.queue.is_empty()
@@ -997,11 +1266,21 @@ impl ThreadPoolState {
     }
 
     /// Returns whether an idle worker should use a timed wait.
+    ///
+    /// # Returns
+    ///
+    /// `true` when core timeout is enabled or the live worker count exceeds
+    /// the core pool size.
     fn worker_wait_is_timed(&self) -> bool {
         self.allow_core_thread_timeout || self.live_workers > self.core_pool_size
     }
 
     /// Returns whether an idle worker may retire now.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the worker count exceeds the maximum size, or when timeout
+    /// policy allows an idle worker to exit.
     fn idle_worker_can_retire(&self) -> bool {
         self.live_workers > self.maximum_pool_size
             || (self.worker_wait_is_timed()
@@ -1024,11 +1303,19 @@ enum ThreadPoolLifecycle {
 
 impl ThreadPoolLifecycle {
     /// Returns whether this lifecycle still accepts new work.
+    ///
+    /// # Returns
+    ///
+    /// `true` only for [`Self::Running`].
     const fn is_running(self) -> bool {
         matches!(self, Self::Running)
     }
 
     /// Returns whether this lifecycle represents graceful shutdown.
+    ///
+    /// # Returns
+    ///
+    /// `true` only for [`Self::Shutdown`].
     const fn is_shutdown(self) -> bool {
         matches!(self, Self::Shutdown)
     }
@@ -1041,7 +1328,9 @@ impl ThreadPoolLifecycle {
 /// the job, or the cancel callback if the job is still queued during immediate
 /// shutdown.
 pub struct PoolJob {
+    /// Callback executed once a worker starts the job.
     run: Option<Box<dyn FnOnce() + Send + 'static>>,
+    /// Callback executed if the job is cancelled before a worker starts it.
     cancel: Option<Box<dyn FnOnce() + Send + 'static>>,
 }
 
@@ -1067,6 +1356,8 @@ impl PoolJob {
     }
 
     /// Runs this job if it has not been cancelled first.
+    ///
+    /// Consumes the job and invokes the run callback at most once.
     fn run(mut self) {
         if let Some(run) = self.run.take() {
             run();
@@ -1074,6 +1365,8 @@ impl PoolJob {
     }
 
     /// Cancels this queued job if it has not been run first.
+    ///
+    /// Consumes the job and invokes the cancellation callback at most once.
     fn cancel(mut self) {
         if let Some(cancel) = self.cancel.take() {
             cancel();
@@ -1082,6 +1375,11 @@ impl PoolJob {
 }
 
 /// Runs a callable task through a task completion endpoint.
+///
+/// # Parameters
+///
+/// * `task` - Callable to execute.
+/// * `completion` - Completion endpoint that receives the final task result.
 fn run_task<C, R, E>(task: C, completion: TaskCompletion<R, E>)
 where
     C: Callable<R, E>,
@@ -1090,6 +1388,11 @@ where
 }
 
 /// Runs a single worker loop until the pool asks it to exit.
+///
+/// # Parameters
+///
+/// * `inner` - Shared pool state used for queue access and counters.
+/// * `first_task` - Optional job assigned directly when the worker is spawned.
 fn run_worker(inner: Arc<ThreadPoolInner>, first_task: Option<PoolJob>) {
     if let Some(job) = first_task {
         job.run();
@@ -1108,6 +1411,14 @@ fn run_worker(inner: Arc<ThreadPoolInner>, first_task: Option<PoolJob>) {
 }
 
 /// Waits until a worker can take a job or should exit.
+///
+/// # Parameters
+///
+/// * `inner` - Shared pool state and condition variables.
+///
+/// # Returns
+///
+/// `Some(job)` when work is available, or `None` when the worker should exit.
 fn wait_for_job(inner: &ThreadPoolInner) -> Option<PoolJob> {
     let mut state = inner.lock_state();
     loop {
@@ -1169,6 +1480,11 @@ fn wait_for_job(inner: &ThreadPoolInner) -> Option<PoolJob> {
 }
 
 /// Marks a worker-held job as finished.
+///
+/// # Parameters
+///
+/// * `inner` - Shared pool state whose running and completed counters are
+///   updated.
 fn finish_running_job(inner: &ThreadPoolInner) {
     let mut state = inner.lock_state();
     state.running_tasks = state
@@ -1180,6 +1496,12 @@ fn finish_running_job(inner: &ThreadPoolInner) {
 }
 
 /// Marks a worker as exited.
+///
+/// # Parameters
+///
+/// * `inner` - Shared pool coordination state used for termination
+///   notification.
+/// * `state` - Locked mutable state whose live worker count is decremented.
 fn unregister_exiting_worker(inner: &ThreadPoolInner, state: &mut ThreadPoolState) {
     state.live_workers = state
         .live_workers
@@ -1189,6 +1511,10 @@ fn unregister_exiting_worker(inner: &ThreadPoolInner, state: &mut ThreadPoolStat
 }
 
 /// Returns the default worker count for new builders.
+///
+/// # Returns
+///
+/// The available CPU parallelism, or `1` if it cannot be detected.
 fn default_worker_count() -> usize {
     thread::available_parallelism()
         .map(usize::from)

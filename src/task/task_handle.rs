@@ -41,20 +41,27 @@ use super::{
 ///
 /// Haixing Hu
 pub struct TaskHandle<R, E> {
+    /// Shared state observed by the handle and updated by completion endpoints.
     inner: Arc<TaskHandleInner<R, E>>,
 }
 
 /// Shared state used by a task handle and its completing runner.
 struct TaskHandleInner<R, E> {
+    /// Monitor protecting the task result, state flags, and async waker.
     state: Monitor<TaskHandleState<R, E>>,
+    /// Atomic completion flag for cheap non-blocking probes.
     done: Atomic<bool>,
 }
 
 /// Mutable completion state protected by the task handle mutex.
 struct TaskHandleState<R, E> {
+    /// Final task result, present only after completion and before retrieval.
     result: Option<TaskResult<R, E>>,
+    /// Whether a runner has started executing the task.
     started: bool,
+    /// Whether a terminal result has been published.
     completed: bool,
+    /// Last async waker registered by polling the handle before completion.
     waker: Option<Waker>,
 }
 
@@ -65,6 +72,7 @@ struct TaskHandleState<R, E> {
 /// while still returning the standard [`TaskHandle`]. Normal callers should use
 /// [`TaskHandle`] and executor/service submission methods instead.
 pub struct TaskCompletion<R, E> {
+    /// Shared state updated by this completion endpoint.
     inner: Arc<TaskHandleInner<R, E>>,
 }
 
@@ -144,6 +152,21 @@ impl<R, E> Future for TaskHandle<R, E> {
     type Output = TaskResult<R, E>;
 
     /// Polls this handle for the accepted task's final result.
+    ///
+    /// # Parameters
+    ///
+    /// * `cx` - Async task context used to store the current waker while the
+    ///   task is pending.
+    ///
+    /// # Returns
+    ///
+    /// `Poll::Ready` with the final task result after completion, or
+    /// `Poll::Pending` while the task is still running or waiting to start.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the shared state says the task completed but no final result
+    /// is stored. That indicates an internal executor bug.
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let result = self.inner.state.write(|state| {
             if state.completed {
@@ -168,6 +191,8 @@ impl<R, E> Future for TaskHandle<R, E> {
 
 impl<R, E> TaskHandleInner<R, E> {
     /// Notifies every waiter that the shared task state may have changed.
+    ///
+    /// This wakes blocking waiters parked in [`Monitor::wait_until`].
     fn notify_completion(&self) {
         self.state.notify_all();
     }
@@ -175,6 +200,10 @@ impl<R, E> TaskHandleInner<R, E> {
 
 impl<R, E> Clone for TaskCompletion<R, E> {
     /// Clones the completion endpoint for mutually exclusive finish paths.
+    ///
+    /// # Returns
+    ///
+    /// A completion endpoint sharing the same task state.
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
@@ -203,6 +232,11 @@ impl<R, E> TaskCompletion<R, E> {
     /// Completes the task with its final result.
     ///
     /// If another path has already completed the task, this result is ignored.
+    ///
+    /// # Parameters
+    ///
+    /// * `result` - Final task result to publish if the task is not already
+    ///   completed.
     pub fn complete(&self, result: TaskResult<R, E>) {
         self.finish(result, |_| true);
     }
@@ -244,6 +278,18 @@ impl<R, E> TaskCompletion<R, E> {
     }
 
     /// Publishes a terminal result when the supplied predicate allows it.
+    ///
+    /// # Parameters
+    ///
+    /// * `result` - Terminal result to store.
+    /// * `can_finish` - Predicate evaluated under the monitor lock to decide
+    ///   whether this path may publish the result.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the result was published and waiters were notified, or
+    /// `false` if another completion path already won or `can_finish`
+    /// rejected the transition.
     fn finish<F>(&self, result: TaskResult<R, E>, can_finish: F) -> bool
     where
         F: FnOnce(&TaskHandleState<R, E>) -> bool,

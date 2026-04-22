@@ -18,7 +18,7 @@ use super::{
 ///
 /// `TokioExecutor` is a [`FutureExecutor`]: its [`Executor::call`] and
 /// [`Executor::execute`] methods return a [`TokioExecution`] value that
-/// **implements [`Future`](std::future::Future)** with
+/// **implements [`Future`]** with
 /// [`Output`](std::future::Future::Output) `= Result<R, E>`. You
 /// obtain the callable's result by **`.await`ing** (or polling) that future; it
 /// is **not** a resolved [`Result`] at return time.
@@ -90,9 +90,13 @@ impl Executor for TokioExecutor {
     /// This method invokes [`tokio::task::spawn_blocking`] **before** returning.
     /// A Tokio runtime must be active when this method runs; see [`TokioExecutor`].
     ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to run on Tokio's blocking task pool.
+    ///
     /// # Returns
     ///
-    /// A [`TokioExecution`] that implements [`Future`](std::future::Future) with
+    /// A [`TokioExecution`] that implements [`Future`] with
     /// [`Output`](std::future::Future::Output) `= Result<R, E>`. Await it to obtain the
     /// callable's result.
     fn call<C, R, E>(&self, mut task: C) -> Self::Execution<R, E>

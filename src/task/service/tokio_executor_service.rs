@@ -34,15 +34,24 @@ use super::{
 /// Shared state for [`TokioExecutorService`].
 #[derive(Default)]
 struct TokioExecutorServiceState {
+    /// Whether shutdown has been requested.
     shutdown: Atomic<bool>,
+    /// Number of accepted Tokio tasks that have not finished or been aborted.
     active_tasks: AtomicCount,
+    /// Serializes task submission and shutdown transitions.
     submission_lock: Mutex<()>,
+    /// Abort handles for tasks accepted by this service.
     abort_handles: Mutex<Vec<AbortHandle>>,
+    /// Notifies waiters once shutdown has completed and no tasks remain active.
     terminated_notify: Notify,
 }
 
 impl TokioExecutorServiceState {
     /// Acquires the submission lock while tolerating poisoned locks.
+    ///
+    /// # Returns
+    ///
+    /// A guard for the submission lock.
     fn lock_submission(&self) -> MutexGuard<'_, ()> {
         self.submission_lock
             .lock()
@@ -50,6 +59,10 @@ impl TokioExecutorServiceState {
     }
 
     /// Acquires the abort handle list while tolerating poisoned locks.
+    ///
+    /// # Returns
+    ///
+    /// A guard for the tracked Tokio abort handles.
     fn lock_abort_handles(&self) -> MutexGuard<'_, Vec<AbortHandle>> {
         self.abort_handles
             .lock()
@@ -66,11 +79,21 @@ impl TokioExecutorServiceState {
 
 /// Task lifecycle guard for [`TokioExecutorService`].
 struct TokioServiceTaskGuard {
+    /// Shared service state updated when the guard is dropped.
     state: Arc<TokioExecutorServiceState>,
 }
 
 impl TokioServiceTaskGuard {
     /// Creates a guard that decrements the active task count on drop.
+    ///
+    /// # Parameters
+    ///
+    /// * `state` - Shared state whose active-task counter is decremented when
+    ///   the guard is dropped.
+    ///
+    /// # Returns
+    ///
+    /// A lifecycle guard bound to the supplied service state.
     fn new(state: Arc<TokioExecutorServiceState>) -> Self {
         Self { state }
     }
@@ -88,10 +111,11 @@ impl Drop for TokioServiceTaskGuard {
 /// Tokio-backed service for submitted blocking tasks.
 ///
 /// The service accepts fallible [`Runnable`](qubit_function::Runnable) and
-/// [`Callable`](qubit_function::Callable) tasks, runs them through Tokio, and
+/// [`Callable`] tasks, runs them through Tokio, and
 /// returns awaitable handles for their final results.
 #[derive(Default, Clone)]
 pub struct TokioExecutorService {
+    /// Shared service state used by all clones of this service.
     state: Arc<TokioExecutorServiceState>,
 }
 
@@ -120,6 +144,19 @@ impl ExecutorService for TokioExecutorService {
         Self: 'a;
 
     /// Accepts a callable and runs it through Tokio.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to execute on Tokio's blocking task pool.
+    ///
+    /// # Returns
+    ///
+    /// A [`TokioTaskHandle`] for the accepted task.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RejectedExecution::Shutdown`] if shutdown has already been
+    /// requested before the task is accepted.
     fn submit_callable<C, R, E>(&self, task: C) -> Result<Self::Handle<R, E>, RejectedExecution>
     where
         C: Callable<R, E> + Send + 'static,
@@ -145,6 +182,9 @@ impl ExecutorService for TokioExecutorService {
     }
 
     /// Stops accepting new tasks.
+    ///
+    /// Already accepted tasks are allowed to finish unless cancelled through
+    /// their handles or by [`Self::shutdown_now`].
     fn shutdown(&self) {
         let _guard = self.state.lock_submission();
         self.state.shutdown.store(true);
@@ -152,6 +192,11 @@ impl ExecutorService for TokioExecutorService {
     }
 
     /// Stops accepting new tasks and aborts tracked Tokio tasks.
+    ///
+    /// # Returns
+    ///
+    /// A report with zero queued tasks, the observed active task count, and
+    /// the number of Tokio abort handles signalled.
     fn shutdown_now(&self) -> ShutdownReport {
         let _guard = self.state.lock_submission();
         self.state.shutdown.store(true);
@@ -177,6 +222,11 @@ impl ExecutorService for TokioExecutorService {
     }
 
     /// Waits until the service has terminated.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves after shutdown has been requested and all
+    /// accepted Tokio tasks have finished or been aborted.
     fn await_termination(&self) -> Self::Termination<'_> {
         Box::pin(async move {
             loop {

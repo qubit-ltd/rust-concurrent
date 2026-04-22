@@ -22,7 +22,7 @@ use tokio::task::{
 
 /// Future-backed execution returned by [`TokioExecutor`](super::TokioExecutor).
 ///
-/// This struct **implements [`Future`](std::future::Future)**:
+/// This struct **implements [`Future`]**:
 /// [`Output`](std::future::Future::Output) is [`Result<R, E>`](Result) — the
 /// success value `R` or the callable's error `E`. Await this type (on a
 /// Tokio-driven async context) to receive that result; until then the underlying
@@ -40,6 +40,7 @@ use tokio::task::{
 ///
 /// Haixing Hu
 pub struct TokioExecution<R, E> {
+    /// Tokio join handle for the blocking task.
     handle: JoinHandle<Result<R, E>>,
 }
 
@@ -88,6 +89,20 @@ impl<R, E> Future for TokioExecution<R, E> {
     type Output = Result<R, E>;
 
     /// Polls the underlying Tokio task.
+    ///
+    /// # Parameters
+    ///
+    /// * `cx` - Async task context used to register the current waker.
+    ///
+    /// # Returns
+    ///
+    /// `Poll::Ready` with the callable result when the Tokio task completes,
+    /// or `Poll::Pending` while the task is still running.
+    ///
+    /// # Panics
+    ///
+    /// Panics if Tokio reports the blocking task was cancelled. If the task
+    /// panicked, this method resumes the original panic payload.
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         match Pin::new(&mut this.handle).poll(cx) {
@@ -99,6 +114,20 @@ impl<R, E> Future for TokioExecution<R, E> {
 }
 
 /// Converts a Tokio join error into this execution's panic behavior.
+///
+/// # Parameters
+///
+/// * `error` - Tokio join error returned while awaiting the blocking task.
+///
+/// # Returns
+///
+/// This function never returns normally for a join error; its return type
+/// matches the call site.
+///
+/// # Panics
+///
+/// Resumes the task panic when Tokio reports a panic, or panics with a
+/// cancellation message when the task was cancelled.
 fn handle_join_error<R, E>(error: JoinError) -> Poll<Result<R, E>> {
     if error.is_panic() {
         std::panic::resume_unwind(error.into_panic());

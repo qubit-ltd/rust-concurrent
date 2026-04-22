@@ -39,6 +39,7 @@ use crate::task::{
 ///
 /// Haixing Hu
 pub struct TokioTaskHandle<R, E> {
+    /// Tokio task whose output is the accepted task's final result.
     handle: JoinHandle<TaskResult<R, E>>,
 }
 
@@ -83,6 +84,16 @@ impl<R, E> Future for TokioTaskHandle<R, E> {
     type Output = TaskResult<R, E>;
 
     /// Polls the underlying Tokio task.
+    ///
+    /// # Parameters
+    ///
+    /// * `cx` - Async task context used to register the current waker.
+    ///
+    /// # Returns
+    ///
+    /// `Poll::Ready` with the task result when the Tokio task completes, or
+    /// `Poll::Pending` while it is still running. Tokio cancellation and panic
+    /// join errors are converted to [`TaskExecutionError`] values.
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         match Pin::new(&mut this.handle).poll(cx) {
@@ -94,6 +105,15 @@ impl<R, E> Future for TokioTaskHandle<R, E> {
 }
 
 /// Converts a Tokio join error into a task execution error.
+///
+/// # Parameters
+///
+/// * `error` - Join error returned by Tokio for an aborted or panicked task.
+///
+/// # Returns
+///
+/// [`TaskExecutionError::Cancelled`] for aborted tasks, otherwise
+/// [`TaskExecutionError::Panicked`].
 fn join_error_to_task_error<E>(error: JoinError) -> TaskExecutionError<E> {
     if error.is_cancelled() {
         TaskExecutionError::Cancelled

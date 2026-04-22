@@ -32,6 +32,7 @@ use super::Executor;
 /// Haixing Hu
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DelayExecutor {
+    /// Duration to sleep before each submitted task starts.
     delay: Duration,
 }
 
@@ -69,6 +70,14 @@ impl Executor for DelayExecutor {
         E: std::fmt::Display + Send + 'static;
 
     /// Starts a helper thread that waits and then runs the callable.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to run after the configured delay.
+    ///
+    /// # Returns
+    ///
+    /// A [`TaskHandle`] for the delayed task.
     fn call<C, R, E>(&self, task: C) -> Self::Execution<R, E>
     where
         C: Callable<R, E> + Send + 'static,

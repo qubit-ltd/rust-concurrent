@@ -49,7 +49,7 @@ mod tests {
                     let checks = checks.clone();
                     move || checks.fetch_add(1, Ordering::AcqRel) == 0
                 })
-                .logger(log::Level::Info, "condition not met")
+                .log_unmet_condition(log::Level::Info, "condition not met")
                 .prepare(|| Ok::<(), io::Error>(()))
                 .rollback_prepare({
                     let rolled_back = rolled_back.clone();
@@ -80,7 +80,7 @@ mod tests {
                     let checks = checks.clone();
                     move || checks.fetch_add(1, Ordering::AcqRel) == 0
                 })
-                .logger(log::Level::Error, "condition not met")
+                .log_unmet_condition(log::Level::Error, "condition not met")
                 .prepare(|| Ok::<(), io::Error>(()))
                 .rollback_prepare(|| Err::<(), _>(io::Error::other("rollback failed")))
                 .build();

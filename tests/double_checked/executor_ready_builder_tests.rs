@@ -137,7 +137,7 @@ mod tests {
             let executor = DoubleCheckedLockExecutor::builder()
                 .on(data)
                 .when(|| true)
-                .logger(log::Level::Error, "condition not met")
+                .log_unmet_condition(log::Level::Error, "condition not met")
                 .prepare(|| Ok::<(), io::Error>(()))
                 .commit_prepare(|| Err::<(), _>(io::Error::other("commit failed")))
                 .build();
@@ -208,7 +208,7 @@ mod tests {
             let executor = DoubleCheckedLockExecutor::builder()
                 .on(data.clone())
                 .when(|| true)
-                .logger(log::Level::Error, "condition not met")
+                .log_unmet_condition(log::Level::Error, "condition not met")
                 .prepare(|| Err::<(), _>(io::Error::other("prepare failed")))
                 .build();
 

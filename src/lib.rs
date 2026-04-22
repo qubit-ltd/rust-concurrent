@@ -17,13 +17,13 @@ pub mod task;
 
 pub use double_checked::{
     DoubleCheckedLockExecutor,
-    ExecutorBuilder,
-    ExecutorLockBuilder,
-    ExecutorReadyBuilder,
     ExecutionContext,
     ExecutionLogger,
     ExecutionResult,
+    ExecutorBuilder,
     ExecutorError,
+    ExecutorLockBuilder,
+    ExecutorReadyBuilder,
 };
 pub use lock::{
     ArcAsyncMutex,

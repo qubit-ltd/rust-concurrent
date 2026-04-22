@@ -21,11 +21,11 @@ mod tests {
         fn test_logger_can_be_configured_in_each_builder_state() {
             let data = ArcMutex::new(1);
             let executor = DoubleCheckedLockExecutor::builder()
-                .logger(log::Level::Info, "initial")
+                .log_unmet_condition(log::Level::Info, "initial")
                 .on(data)
-                .logger(log::Level::Debug, "locked")
+                .log_unmet_condition(log::Level::Debug, "locked")
                 .when(|| true)
-                .logger(log::Level::Warn, "ready")
+                .log_unmet_condition(log::Level::Warn, "ready")
                 .build();
 
             let result = executor

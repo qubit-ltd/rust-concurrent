@@ -30,11 +30,11 @@ use qubit_function::{
 };
 
 use super::{
-    executor_builder::ExecutorBuilder,
-    executor_ready_builder::ExecutorReadyBuilder,
     ExecutionContext,
     ExecutionLogger,
     ExecutionResult,
+    executor_builder::ExecutorBuilder,
+    executor_ready_builder::ExecutorReadyBuilder,
 };
 use crate::{
     lock::Lock,
@@ -43,8 +43,8 @@ use crate::{
 
 /// Reusable double-checked lock executor.
 ///
-/// The executor owns the lock handle, condition tester, and optional prepare
-/// lifecycle callbacks. Each execution performs:
+/// The executor owns the lock handle, condition tester, execution logger, and
+/// optional prepare lifecycle callbacks. Each execution performs:
 ///
 /// 1. A first condition check outside the lock.
 /// 2. Optional prepare action.
@@ -62,6 +62,52 @@ use crate::{
 /// * `L` - The lock type implementing [`Lock<T>`].
 /// * `T` - The data type protected by the lock.
 ///
+/// # Examples
+///
+/// Use [`DoubleCheckedLockExecutor::builder`] to attach a lock (for example
+/// [`crate::ArcMutex`]), set a [`Tester`](qubit_function::Tester) with
+/// [`ExecutorLockBuilder::when`], then call [`Self::call`], [`Self::execute`],
+/// [`Self::call_with`], or [`Self::execute_with`] on the built executor.
+///
+/// ```
+/// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+///
+/// use qubit_concurrent::{ArcMutex, DoubleCheckedLockExecutor, Lock};
+/// use qubit_concurrent::double_checked::ExecutionResult;
+///
+/// let data = ArcMutex::new(10);
+/// let skip = Arc::new(AtomicBool::new(false));
+///
+/// let executor = DoubleCheckedLockExecutor::builder()
+///     .on(data.clone())
+///     .when({
+///         let skip = skip.clone();
+///         move || !skip.load(Ordering::Acquire)
+///     })
+///     .build();
+///
+/// let updated = executor
+///     .call_with(|value: &mut i32| {
+///         *value += 5;
+///         Ok::<i32, std::io::Error>(*value)
+///     })
+///     .get_result();
+///
+/// assert!(matches!(updated, ExecutionResult::Success(15)));
+/// assert_eq!(data.read(|value| *value), 15);
+///
+/// skip.store(true, Ordering::Release);
+/// let skipped = executor
+///     .call_with(|value: &mut i32| {
+///         *value += 1;
+///         Ok::<i32, std::io::Error>(*value)
+///     })
+///     .get_result();
+///
+/// assert!(matches!(skipped, ExecutionResult::ConditionNotMet));
+/// assert_eq!(data.read(|value| *value), 15);
+/// ```
+///
 /// # Author
 ///
 /// Haixing Hu
@@ -73,8 +119,8 @@ pub struct DoubleCheckedLockExecutor<L = (), T = ()> {
     /// Condition checked before and after acquiring the lock.
     tester: ArcTester,
 
-    /// Optional logger used for unmet conditions and prepare failures.
-    logger: Option<ExecutionLogger>,
+    /// Logger for unmet conditions and prepare lifecycle failures.
+    logger: ExecutionLogger,
 
     /// Optional action executed after the first check and before locking.
     prepare_action: Option<ArcRunnable<String>>,
@@ -111,8 +157,8 @@ where
     ///
     /// # Parameters
     ///
-    /// * `builder` - Ready builder carrying the lock, tester, optional logger,
-    ///   and prepare lifecycle callbacks.
+    /// * `builder` - Ready builder carrying the lock, tester, logger, and
+    ///   prepare lifecycle callbacks.
     ///
     /// # Returns
     ///
@@ -287,11 +333,7 @@ where
             return Ok(false);
         };
         if let Err(error) = prepare_action.run() {
-            if let Some(ref logger) = self.logger {
-                logger.log_prepare_failed(&error);
-            } else {
-                log::error!("Prepare action failed: {}", error);
-            }
+            self.logger.log_prepare_failed(&error);
             return Err(error);
         }
         Ok(true)
@@ -317,11 +359,7 @@ where
             if let Some(mut commit_prepare_action) = self.commit_prepare_action.clone()
                 && let Err(error) = commit_prepare_action.run()
             {
-                if let Some(ref logger) = self.logger {
-                    logger.log_prepare_commit_failed(&error);
-                } else {
-                    log::error!("Prepare commit action failed: {}", error);
-                }
+                self.logger.log_prepare_commit_failed(&error);
                 result = ExecutionResult::prepare_commit_failed(error);
             }
             return result;
@@ -336,23 +374,15 @@ where
         if let Some(mut rollback_prepare_action) = self.rollback_prepare_action.clone()
             && let Err(error) = rollback_prepare_action.run()
         {
-            if let Some(ref logger) = self.logger {
-                logger.log_prepare_rollback_failed(&error);
-            } else {
-                log::error!("Prepare rollback action failed: {}", error);
-            }
+            self.logger.log_prepare_rollback_failed(&error);
             result = ExecutionResult::prepare_rollback_failed(original, error);
         }
         result
     }
 
     /// Logs that the double-checked condition was not met.
-    ///
-    /// This method writes through the configured logger, if any.
     fn log_unmet_condition(&self) {
-        if let Some(ref logger) = self.logger {
-            logger.log_unmet();
-        }
+        self.logger.log_unmet_condition();
     }
 }
 

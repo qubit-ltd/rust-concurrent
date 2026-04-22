@@ -158,7 +158,7 @@ mod tests {
             let executor = DoubleCheckedLockExecutor::builder()
                 .on(data.clone())
                 .when(|| false)
-                .logger(log::Level::Info, "condition not met")
+                .log_unmet_condition(log::Level::Info, "condition not met")
                 .build();
 
             let result = executor

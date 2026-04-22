@@ -15,8 +15,8 @@
 use std::marker::PhantomData;
 
 use super::{
-    executor_lock_builder::ExecutorLockBuilder,
     ExecutionLogger,
+    executor_lock_builder::ExecutorLockBuilder,
 };
 use crate::lock::Lock;
 
@@ -29,24 +29,50 @@ use crate::lock::Lock;
 /// Haixing Hu
 #[derive(Debug, Default, Clone)]
 pub struct ExecutorBuilder {
-    /// Optional logger carried forward to later builder states.
-    logger: Option<ExecutionLogger>,
+    /// Logger carried forward to later builder states.
+    logger: ExecutionLogger,
 }
 
 impl ExecutorBuilder {
-    /// Configures logging before the lock is attached.
-    ///
-    /// # Parameters
-    ///
-    /// * `level` - The log level used for double-checked execution events.
-    /// * `message` - The message logged when the condition is not met.
-    ///
-    /// # Returns
-    ///
-    /// This builder with logging configured.
+    /// Configures logging when the double-checked condition is not met.
     #[inline]
-    pub fn logger(mut self, level: log::Level, message: &str) -> Self {
-        self.logger = Some(ExecutionLogger::new(level, message));
+    pub fn log_unmet_condition(mut self, level: log::Level, message: impl Into<String>) -> Self {
+        self.logger.set_unmet_condition(Some(level), message);
+        self
+    }
+
+    /// Configures logging when the prepare action fails.
+    #[inline]
+    pub fn log_prepare_failure(
+        mut self,
+        level: log::Level,
+        message_prefix: impl Into<String>,
+    ) -> Self {
+        self.logger.set_prepare_failure(Some(level), message_prefix);
+        self
+    }
+
+    /// Configures logging when the prepare commit action fails.
+    #[inline]
+    pub fn log_prepare_commit_failure(
+        mut self,
+        level: log::Level,
+        message_prefix: impl Into<String>,
+    ) -> Self {
+        self.logger
+            .set_prepare_commit_failure(Some(level), message_prefix);
+        self
+    }
+
+    /// Configures logging when the prepare rollback action fails.
+    #[inline]
+    pub fn log_prepare_rollback_failure(
+        mut self,
+        level: log::Level,
+        message_prefix: impl Into<String>,
+    ) -> Self {
+        self.logger
+            .set_prepare_rollback_failure(Some(level), message_prefix);
         self
     }
 

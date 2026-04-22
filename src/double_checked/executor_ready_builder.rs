@@ -25,8 +25,8 @@ use qubit_function::{
 };
 
 use super::{
-    double_checked_lock_executor::DoubleCheckedLockExecutor,
     ExecutionLogger,
+    double_checked_lock_executor::DoubleCheckedLockExecutor,
 };
 use crate::lock::Lock;
 
@@ -51,8 +51,8 @@ pub struct ExecutorReadyBuilder<L, T> {
     /// Required condition tester.
     pub(in crate::double_checked) tester: ArcTester,
 
-    /// Optional logger used by the executor.
-    pub(in crate::double_checked) logger: Option<ExecutionLogger>,
+    /// Logger used by the executor.
+    pub(in crate::double_checked) logger: ExecutionLogger,
 
     /// Optional action executed after the first check and before locking.
     pub(in crate::double_checked) prepare_action: Option<ArcRunnable<String>>,
@@ -71,19 +71,45 @@ impl<L, T> ExecutorReadyBuilder<L, T>
 where
     L: Lock<T>,
 {
-    /// Configures logging after the tester is set.
-    ///
-    /// # Parameters
-    ///
-    /// * `level` - The log level used for double-checked execution events.
-    /// * `message` - The message logged when the condition is not met.
-    ///
-    /// # Returns
-    ///
-    /// This builder with logging configured.
+    /// Configures logging when the double-checked condition is not met.
     #[inline]
-    pub fn logger(mut self, level: log::Level, message: &str) -> Self {
-        self.logger = Some(ExecutionLogger::new(level, message));
+    pub fn log_unmet_condition(mut self, level: log::Level, message: impl Into<String>) -> Self {
+        self.logger.set_unmet_condition(Some(level), message);
+        self
+    }
+
+    /// Configures logging when the prepare action fails.
+    #[inline]
+    pub fn log_prepare_failure(
+        mut self,
+        level: log::Level,
+        message_prefix: impl Into<String>,
+    ) -> Self {
+        self.logger.set_prepare_failure(Some(level), message_prefix);
+        self
+    }
+
+    /// Configures logging when the prepare commit action fails.
+    #[inline]
+    pub fn log_prepare_commit_failure(
+        mut self,
+        level: log::Level,
+        message_prefix: impl Into<String>,
+    ) -> Self {
+        self.logger
+            .set_prepare_commit_failure(Some(level), message_prefix);
+        self
+    }
+
+    /// Configures logging when the prepare rollback action fails.
+    #[inline]
+    pub fn log_prepare_rollback_failure(
+        mut self,
+        level: log::Level,
+        message_prefix: impl Into<String>,
+    ) -> Self {
+        self.logger
+            .set_prepare_rollback_failure(Some(level), message_prefix);
         self
     }
 
@@ -173,7 +199,7 @@ where
     /// # Returns
     ///
     /// A [`DoubleCheckedLockExecutor`] containing the configured lock, tester,
-    /// logger, and prepare lifecycle callbacks.
+    /// execution logger, and prepare lifecycle callbacks.
     #[inline]
     pub fn build(self) -> DoubleCheckedLockExecutor<L, T> {
         DoubleCheckedLockExecutor::new(self)

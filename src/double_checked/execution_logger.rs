@@ -19,109 +19,230 @@ use std::fmt;
 /// Logger for double-checked execution (condition unmet, prepare failures,
 /// prepare commit failures, and prepare rollback failures).
 ///
-/// Holds log level and unmet message (previous `LogConfig` surface) plus
-/// message prefixes for prepare lifecycle errors, and an `enabled` switch.
+/// Each event has its own optional [`log::Level`] and message. `None` means
+/// that event does not emit logs. For prepare-style events the message is a
+/// prefix formatted as `"{prefix}: {error}"`.
+///
+/// [`ExecutionLogger::default`] matches the previous `Option` logger unset
+/// behavior: condition-unmet is silent (`None`); prepare lifecycle lines use
+/// [`log::Level::Error`] with English default prefixes.
 ///
 /// # Author
 ///
 /// Haixing Hu
 #[derive(Debug, Clone)]
 pub struct ExecutionLogger {
-    /// When `false`, all logging methods are no-ops.
-    pub enabled: bool,
-
-    /// Log level for the condition-unmet message.
-    pub level: log::Level,
+    /// Log level for the condition-unmet message; `None` skips it.
+    pub unmet_condition_level: Option<log::Level>,
 
     /// Message logged when the execution condition is not met.
-    pub unmet_message: String,
+    pub unmet_condition_message: String,
 
-    /// Prefix for prepare-failure lines (logged at error level), formatted as
-    /// `"{prefix}: {error}"`.
+    /// Log level for prepare-action failure lines; `None` skips them.
+    pub prepare_failed_level: Option<log::Level>,
+
+    /// Prefix for prepare-failure lines, formatted as `"{prefix}: {error}"`.
     pub prepare_failed_message: String,
 
-    /// Prefix for prepare-commit failure lines (logged at error level),
-    /// formatted as `"{prefix}: {error}"`.
+    /// Log level for prepare-commit failure lines; `None` skips them.
+    pub prepare_commit_failed_level: Option<log::Level>,
+
+    /// Prefix for prepare-commit failure lines, formatted as `"{prefix}: {error}"`.
     pub prepare_commit_failed_message: String,
 
-    /// Prefix for prepare-rollback failure lines (logged at error level),
-    /// formatted as `"{prefix}: {error}"`.
+    /// Log level for prepare-rollback failure lines; `None` skips them.
+    pub prepare_rollback_failed_level: Option<log::Level>,
+
+    /// Prefix for prepare-rollback failure lines, formatted as
+    /// `"{prefix}: {error}"`.
     pub prepare_rollback_failed_message: String,
 }
 
-impl ExecutionLogger {
-    /// Creates a logger with default prepare lifecycle prefixes.
+impl Default for ExecutionLogger {
+    /// Returns the logger configuration used when the executor builder does not
+    /// apply any logging overrides.
     ///
-    /// # Parameters
-    ///
-    /// * `level` - Log level used for unmet-condition messages.
-    /// * `unmet_message` - Message logged when the double-checked condition is
-    ///   not met.
+    /// Condition-unmet logging is disabled ([`ExecutionLogger::unmet_condition_level`]
+    /// is [`None`]). Prepare lifecycle failures log at [`log::Level::Error`] with
+    /// short English default prefixes (see the field defaults on [`ExecutionLogger`]).
     ///
     /// # Returns
     ///
-    /// An enabled logger configured with default prepare lifecycle messages.
+    /// A new [`ExecutionLogger`] with the values described above.
     #[inline]
-    pub fn new(level: log::Level, unmet_message: impl Into<String>) -> Self {
+    fn default() -> Self {
         Self {
-            enabled: true,
-            level,
-            unmet_message: unmet_message.into(),
+            unmet_condition_level: None,
+            unmet_condition_message: String::new(),
+            prepare_failed_level: Some(log::Level::Error),
             prepare_failed_message: "Prepare action failed".to_string(),
+            prepare_commit_failed_level: Some(log::Level::Error),
             prepare_commit_failed_message: "Prepare commit action failed".to_string(),
+            prepare_rollback_failed_level: Some(log::Level::Error),
             prepare_rollback_failed_message: "Prepare rollback action failed".to_string(),
         }
     }
+}
 
-    /// Logs the configured unmet message at [`Self::level`] when [`Self::enabled`].
+impl ExecutionLogger {
+    /// Updates logging for the case where the double-checked condition is not met
+    /// (the tester returns `false` before or after taking the lock).
     ///
-    /// This method writes through the global `log` facade when enabled.
-    #[inline]
-    pub fn log_unmet(&self) {
-        if !self.enabled {
-            return;
-        }
-        log::log!(self.level, "{}", self.unmet_message);
-    }
-
-    /// Logs a prepare-action failure at error level when [`Self::enabled`].
+    /// When [`Self::unmet_condition_level`] is [`None`], [`Self::log_unmet_condition`]
+    /// becomes a no-op. The `message` is still stored and used if the level is set
+    /// to [`Some`] later.
     ///
     /// # Parameters
     ///
-    /// * `err` - Error value to append to the configured prepare-failure
-    ///   prefix.
+    /// * `level` - Optional severity for the line written through the `log` crate,
+    ///   or [`None`] to disable this event.
+    /// * `message` - Full line text (not a prefix); passed to [`log::log!`] as the
+    ///   format argument when logging runs.
+    #[inline]
+    pub fn set_unmet_condition(&mut self, level: Option<log::Level>, message: impl Into<String>) {
+        self.unmet_condition_level = level;
+        self.unmet_condition_message = message.into();
+    }
+
+    /// Updates logging for a failed optional prepare action (before the lock is taken).
+    ///
+    /// When [`Self::prepare_failed_level`] is [`None`], [`Self::log_prepare_failed`]
+    /// becomes a no-op.
+    ///
+    /// # Parameters
+    ///
+    /// * `level` - Optional severity for the diagnostic line, or [`None`] to disable.
+    /// * `message_prefix` - Text placed before the error; the emitted line has the
+    ///   form `"{prefix}: {error}"`.
+    #[inline]
+    pub fn set_prepare_failure(
+        &mut self,
+        level: Option<log::Level>,
+        message_prefix: impl Into<String>,
+    ) {
+        self.prepare_failed_level = level;
+        self.prepare_failed_message = message_prefix.into();
+    }
+
+    /// Updates logging for a failed prepare commit action (after a successful task
+    /// when prepare had completed).
+    ///
+    /// When [`Self::prepare_commit_failed_level`] is [`None`],
+    /// [`Self::log_prepare_commit_failed`] becomes a no-op.
+    ///
+    /// # Parameters
+    ///
+    /// * `level` - Optional severity for the diagnostic line, or [`None`] to disable.
+    /// * `message_prefix` - Text placed before the error; the emitted line has the
+    ///   form `"{prefix}: {error}"`.
+    #[inline]
+    pub fn set_prepare_commit_failure(
+        &mut self,
+        level: Option<log::Level>,
+        message_prefix: impl Into<String>,
+    ) {
+        self.prepare_commit_failed_level = level;
+        self.prepare_commit_failed_message = message_prefix.into();
+    }
+
+    /// Updates logging for a failed prepare rollback action (after a failed second
+    /// check or task when prepare had completed).
+    ///
+    /// When [`Self::prepare_rollback_failed_level`] is [`None`],
+    /// [`Self::log_prepare_rollback_failed`] becomes a no-op.
+    ///
+    /// # Parameters
+    ///
+    /// * `level` - Optional severity for the diagnostic line, or [`None`] to disable.
+    /// * `message_prefix` - Text placed before the error; the emitted line has the
+    ///   form `"{prefix}: {error}"`.
+    #[inline]
+    pub fn set_prepare_rollback_failure(
+        &mut self,
+        level: Option<log::Level>,
+        message_prefix: impl Into<String>,
+    ) {
+        self.prepare_rollback_failed_level = level;
+        self.prepare_rollback_failed_message = message_prefix.into();
+    }
+
+    /// Emits the condition-unmet log line if enabled.
+    ///
+    /// Does nothing when [`Self::unmet_condition_level`] is [`None`]. Otherwise
+    /// writes [`Self::unmet_condition_message`] through the `log` facade at the
+    /// configured level, subject to the crate-wide maximum log level (for example
+    /// set via [`log::set_max_level`] or compile-time filters).
+    #[inline]
+    pub fn log_unmet_condition(&self) {
+        let Some(level) = self.unmet_condition_level else {
+            return;
+        };
+        log::log!(level, "{}", self.unmet_condition_message);
+    }
+
+    /// Emits a diagnostic line when the prepare action fails.
+    ///
+    /// Does nothing when [`Self::prepare_failed_level`] is [`None`]. Otherwise
+    /// logs `"{prefix}: {err}"` at the configured level via the `log` facade,
+    /// where `prefix` is [`Self::prepare_failed_message`], subject to the
+    /// crate-wide maximum log level.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `E` - Displayable error or message value appended after the prefix.
+    ///
+    /// # Parameters
+    ///
+    /// * `err` - Failure to record next to the configured prefix.
     #[inline]
     pub fn log_prepare_failed<E: fmt::Display>(&self, err: E) {
-        if !self.enabled {
+        let Some(level) = self.prepare_failed_level else {
             return;
-        }
-        log::error!("{}: {}", self.prepare_failed_message, err);
+        };
+        log::log!(level, "{}: {}", self.prepare_failed_message, err);
     }
 
-    /// Logs a prepare commit failure at error level when [`Self::enabled`].
+    /// Emits a diagnostic line when the prepare commit action fails.
+    ///
+    /// Does nothing when [`Self::prepare_commit_failed_level`] is [`None`].
+    /// Otherwise logs `"{prefix}: {err}"` at the configured level, where `prefix`
+    /// is [`Self::prepare_commit_failed_message`], subject to the crate-wide
+    /// maximum log level.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `E` - Displayable error or message value appended after the prefix.
     ///
     /// # Parameters
     ///
-    /// * `err` - Error value to append to the configured prepare-commit prefix.
+    /// * `err` - Commit failure to record next to the configured prefix.
     #[inline]
     pub fn log_prepare_commit_failed<E: fmt::Display>(&self, err: E) {
-        if !self.enabled {
+        let Some(level) = self.prepare_commit_failed_level else {
             return;
-        }
-        log::error!("{}: {}", self.prepare_commit_failed_message, err);
+        };
+        log::log!(level, "{}: {}", self.prepare_commit_failed_message, err);
     }
 
-    /// Logs a prepare rollback failure at error level when [`Self::enabled`].
+    /// Emits a diagnostic line when the prepare rollback action fails.
+    ///
+    /// Does nothing when [`Self::prepare_rollback_failed_level`] is [`None`].
+    /// Otherwise logs `"{prefix}: {err}"` at the configured level, where `prefix`
+    /// is [`Self::prepare_rollback_failed_message`], subject to the crate-wide
+    /// maximum log level.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `E` - Displayable error or message value appended after the prefix.
     ///
     /// # Parameters
     ///
-    /// * `err` - Error value to append to the configured prepare-rollback
-    ///   prefix.
+    /// * `err` - Rollback failure to record next to the configured prefix.
     #[inline]
     pub fn log_prepare_rollback_failed<E: fmt::Display>(&self, err: E) {
-        if !self.enabled {
+        let Some(level) = self.prepare_rollback_failed_level else {
             return;
-        }
-        log::error!("{}: {}", self.prepare_rollback_failed_message, err);
+        };
+        log::log!(level, "{}: {}", self.prepare_rollback_failed_message, err);
     }
 }

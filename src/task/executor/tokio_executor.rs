@@ -8,11 +8,7 @@
  ******************************************************************************/
 use qubit_function::Callable;
 
-use super::{
-    Executor,
-    FutureExecutor,
-    TokioExecution,
-};
+use super::{Executor, FutureExecutor, TokioExecution};
 
 /// Executes callable tasks on Tokio's blocking task pool.
 ///

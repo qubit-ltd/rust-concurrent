@@ -6,10 +6,7 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-use std::{
-    io,
-    sync::Arc,
-};
+use std::{io, sync::Arc};
 
 use thiserror::Error;
 

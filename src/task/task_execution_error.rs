@@ -6,10 +6,7 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-use std::{
-    error::Error,
-    fmt,
-};
+use std::{error::Error, fmt};
 
 /// Result type used by managed task handles.
 pub type TaskResult<R, E> = Result<R, TaskExecutionError<E>>;

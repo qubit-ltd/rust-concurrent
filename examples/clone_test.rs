@@ -6,10 +6,7 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-use qubit_concurrent::{
-    Lock,
-    lock::ArcStdMutex,
-};
+use qubit_concurrent::{Lock, lock::ArcStdMutex};
 
 fn main() {
     println!("Testing ArcStdMutex Clone functionality...");

@@ -12,21 +12,14 @@ use std::{
     io,
     sync::{
         Arc,
-        atomic::{
-            AtomicBool,
-            Ordering,
-        },
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
 use qubit_concurrent::task::{
     TaskExecutionError,
-    service::{
-        ExecutorService,
-        RejectedExecution,
-        ThreadPerTaskExecutorService,
-    },
+    service::{ExecutorService, RejectedExecution, ThreadPerTaskExecutorService},
 };
 
 /// Creates a current-thread Tokio runtime for driving async termination APIs in sync tests.

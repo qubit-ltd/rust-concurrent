@@ -9,31 +9,16 @@
 use std::{
     future::Future,
     pin::Pin,
-    sync::{
-        Arc,
-        Condvar,
-        Mutex,
-        MutexGuard,
-    },
+    sync::{Arc, Condvar, Mutex, MutexGuard},
     thread,
 };
 
-use qubit_atomic::{
-    Atomic,
-    AtomicCount,
-};
+use qubit_atomic::{Atomic, AtomicCount};
 use qubit_function::Callable;
 
-use crate::task::{
-    TaskHandle,
-    task_runner::run_callable,
-};
+use crate::task::{TaskHandle, task_runner::run_callable};
 
-use super::{
-    ExecutorService,
-    RejectedExecution,
-    ShutdownReport,
-};
+use super::{ExecutorService, RejectedExecution, ShutdownReport};
 
 /// Shared state for [`ThreadPerTaskExecutorService`].
 #[derive(Default)]

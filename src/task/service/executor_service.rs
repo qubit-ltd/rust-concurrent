@@ -8,15 +8,9 @@
  ******************************************************************************/
 use std::future::Future;
 
-use qubit_function::{
-    Callable,
-    Runnable,
-};
+use qubit_function::{Callable, Runnable};
 
-use super::{
-    RejectedExecution,
-    ShutdownReport,
-};
+use super::{RejectedExecution, ShutdownReport};
 
 /// Managed task service with submission and lifecycle control.
 ///

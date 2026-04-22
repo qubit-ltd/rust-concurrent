@@ -10,20 +10,13 @@
 
 use std::{
     io,
-    sync::atomic::{
-        AtomicBool,
-        Ordering,
-    },
+    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
 use qubit_concurrent::task::{
     TaskExecutionError,
-    service::{
-        ExecutorService,
-        RejectedExecution,
-        TokioExecutorService,
-    },
+    service::{ExecutorService, RejectedExecution, TokioExecutorService},
 };
 
 static SHARED_CANCELLABLE_TASK_SHOULD_SLEEP: AtomicBool = AtomicBool::new(false);

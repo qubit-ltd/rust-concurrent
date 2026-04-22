@@ -12,18 +12,12 @@ use std::{
     io,
     sync::mpsc,
     thread,
-    time::{
-        Duration,
-        Instant,
-    },
+    time::{Duration, Instant},
 };
 
 use qubit_concurrent::task::{
     TaskExecutionError,
-    executor::{
-        DelayExecutor,
-        Executor,
-    },
+    executor::{DelayExecutor, Executor},
 };
 
 fn delayed_value_task() -> Result<usize, io::Error> {

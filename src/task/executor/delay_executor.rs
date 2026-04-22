@@ -6,17 +6,11 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-use std::{
-    thread,
-    time::Duration,
-};
+use std::{thread, time::Duration};
 
 use qubit_function::Callable;
 
-use crate::task::{
-    TaskHandle,
-    task_runner::run_callable,
-};
+use crate::task::{TaskHandle, task_runner::run_callable};
 
 use super::Executor;
 

@@ -6,30 +6,15 @@
  *    All rights reserved.
  *
  ******************************************************************************/
-use std::sync::{
-    Arc,
-    Mutex,
-    MutexGuard,
-};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-use qubit_atomic::{
-    Atomic,
-    AtomicCount,
-};
+use qubit_atomic::{Atomic, AtomicCount};
 use qubit_function::Callable;
-use tokio::{
-    sync::Notify,
-    task::AbortHandle,
-};
+use tokio::{sync::Notify, task::AbortHandle};
 
 use crate::task::task_runner::run_callable;
 
-use super::{
-    ExecutorService,
-    RejectedExecution,
-    ShutdownReport,
-    TokioTaskHandle,
-};
+use super::{ExecutorService, RejectedExecution, ShutdownReport, TokioTaskHandle};
 
 /// Shared state for [`TokioExecutorService`].
 #[derive(Default)]

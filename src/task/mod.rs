@@ -21,11 +21,5 @@ mod task_execution_error;
 mod task_handle;
 mod task_runner;
 
-pub use task_execution_error::{
-    TaskExecutionError,
-    TaskResult,
-};
-pub use task_handle::{
-    TaskCompletion,
-    TaskHandle,
-};
+pub use task_execution_error::{TaskExecutionError, TaskResult};
+pub use task_handle::{TaskCompletion, TaskHandle};

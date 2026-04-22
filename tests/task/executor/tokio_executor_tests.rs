@@ -8,16 +8,9 @@
  ******************************************************************************/
 //! Tests for [`TokioExecutor`](qubit_concurrent::task::executor::TokioExecutor).
 
-use std::{
-    io,
-    sync::mpsc,
-    time::Duration,
-};
+use std::{io, sync::mpsc, time::Duration};
 
-use qubit_concurrent::task::executor::{
-    Executor,
-    TokioExecutor,
-};
+use qubit_concurrent::task::executor::{Executor, TokioExecutor};
 
 #[tokio::test]
 async fn test_tokio_executor_execute_returns_future_result() {

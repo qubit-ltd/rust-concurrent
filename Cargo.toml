@@ -1,6 +1,6 @@
 [package]
 name = "qubit-concurrent"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -44,3 +44,8 @@ qubit-function = "0.10"
 
 [dev-dependencies]
 tokio = { version = "1.5", features = ["macros", "rt-multi-thread", "time"] }
+criterion = "0.5"
+
+[[bench]]
+name = "thread_pool_bench"
+harness = false

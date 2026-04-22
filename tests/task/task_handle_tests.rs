@@ -8,20 +8,11 @@
  ******************************************************************************/
 //! Tests for [`TaskHandle`](qubit_concurrent::task::TaskHandle).
 
-use std::{
-    io,
-    sync::mpsc,
-    thread,
-    time::Duration,
-};
+use std::{io, sync::mpsc, thread, time::Duration};
 
 use qubit_concurrent::task::{
-    TaskExecutionError,
-    TaskHandle,
-    executor::{
-        Executor,
-        ThreadPerTaskExecutor,
-    },
+    TaskExecutionError, TaskHandle,
+    executor::{Executor, ThreadPerTaskExecutor},
 };
 
 #[tokio::test]

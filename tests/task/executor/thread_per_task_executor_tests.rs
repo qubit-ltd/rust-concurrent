@@ -10,18 +10,12 @@
 
 use std::{
     io,
-    sync::atomic::{
-        AtomicUsize,
-        Ordering,
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use qubit_concurrent::task::{
     TaskExecutionError,
-    executor::{
-        Executor,
-        ThreadPerTaskExecutor,
-    },
+    executor::{Executor, ThreadPerTaskExecutor},
 };
 
 static SHARED_RUNNER_TASK_CALLS: AtomicUsize = AtomicUsize::new(0);

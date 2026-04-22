@@ -8,10 +8,7 @@
  ******************************************************************************/
 //! Tests for task execution error helpers.
 
-use std::{
-    error::Error,
-    io,
-};
+use std::{error::Error, io};
 
 use qubit_concurrent::task::TaskExecutionError;
 

@@ -10,10 +10,7 @@ use std::thread;
 
 use qubit_function::Callable;
 
-use crate::task::{
-    TaskHandle,
-    task_runner::run_callable,
-};
+use crate::task::{TaskHandle, task_runner::run_callable};
 
 use super::Executor;
 

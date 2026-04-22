@@ -10,21 +10,14 @@ use std::{
     future::Future,
     pin::Pin,
     sync::Arc,
-    task::{
-        Context,
-        Poll,
-        Waker,
-    },
+    task::{Context, Poll, Waker},
 };
 
 use qubit_atomic::Atomic;
 
 use crate::lock::Monitor;
 
-use super::{
-    TaskExecutionError,
-    TaskResult,
-};
+use super::{TaskExecutionError, TaskResult};
 
 /// Handle for a task running outside the caller's current stack.
 ///

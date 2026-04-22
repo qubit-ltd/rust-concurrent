@@ -51,7 +51,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-qubit-concurrent = "0.5.1"
+  qubit-concurrent = "0.6.0"
 ```
 
 ## Quick Start
@@ -205,10 +205,21 @@ fn main() {
 
 ### Condition-Based Monitor
 
+`Monitor<T>` packages a `std::sync::Mutex<T>` and a `std::sync::Condvar`
+as one monitor object. It does not replace those standard primitives with a
+different synchronization mechanism; instead, it binds the protected state and
+the condition variable together so callers do not have to store and match two
+separate fields manually.
+
+Use `read` and `write` for short critical sections. Use `wait_while` or
+`wait_until` for the common guarded-suspension pattern. For more complex
+state machines, call `lock` to get a `MonitorGuard`, then call
+`MonitorGuard::wait` or `MonitorGuard::wait_timeout` inside your own loop.
+
 ```rust
 use std::thread;
 
-use qubit_concurrent::ArcMonitor;
+use qubit_concurrent::lock::ArcMonitor;
 
 fn main() {
     let monitor = ArcMonitor::new(Vec::<String>::new());
@@ -233,38 +244,142 @@ fn main() {
 }
 ```
 
+The guard API keeps the same shape as the standard `Condvar` loop, but the
+guard already knows which monitor it belongs to:
+
+```rust
+use std::{
+    thread,
+    time::Duration,
+};
+
+use qubit_concurrent::lock::{ArcMonitor, WaitTimeoutStatus};
+
+fn main() {
+    let monitor = ArcMonitor::new(Vec::<String>::new());
+    let worker_monitor = monitor.clone();
+
+    let worker = thread::spawn(move || {
+        let mut messages = worker_monitor.lock();
+        while messages.is_empty() {
+            let (next_messages, status) = messages.wait_timeout(Duration::from_secs(1));
+            messages = next_messages;
+            if status == WaitTimeoutStatus::TimedOut && messages.is_empty() {
+                return None;
+            }
+        }
+        messages.pop()
+    });
+
+    monitor.write(|messages| {
+        messages.push("ready".to_string());
+    });
+    monitor.notify_one();
+
+    assert_eq!(
+        worker.join().expect("worker should finish"),
+        Some("ready".to_string()),
+    );
+}
+```
+
 ### Double-checked locking
 
 Skip lock acquisition and expensive reads when a cheap flag already rules them out (for example a **frozen** account). The same predicate is evaluated again under the lock so a race where the account freezes between checks does not run the heavy `read_balance` work.
 
-```rust
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use qubit_concurrent::{DoubleCheckedLockExecutor, ArcMutex, lock::Lock};
+An optional **`prepare`** action runs after the first condition check succeeds and before the lock is taken. If `prepare` was configured and completed successfully, then after the lock is released: **`commit_prepare`** runs when the task succeeds, and **`rollback_prepare`** runs when the second check fails or the task fails.
 
-fn read_balance(latest: &i32) -> Result<i32, std::io::Error> {
+Logging goes through the [`log`](https://docs.rs/log/latest/log/) facade; the `log_*` builder methods only emit lines when those events occur. To see output, install a logger implementation in your application (for example depend on `env_logger` in the binary crate and call `env_logger::init()`). Without a backend, logging is a no-op or discarded by the facade.
+
+```rust
+use std::io;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use log::Level;
+use qubit_concurrent::{
+    ArcMutex,
+    DoubleCheckedLockExecutor,
+    double_checked::{ExecutionResult, ExecutorError},
+    lock::Lock,
+};
+
+fn read_balance(latest: &i32) -> Result<i32, io::Error> {
     // Expensive: ledger reconciliation, remote validation, etc.
     Ok(*latest)
 }
 
 fn main() {
-    let balance = ArcMutex::new(1_000);
+    let balance = ArcMutex::new(1_000_i32);
     let frozen = Arc::new(AtomicBool::new(false));
 
+    // Counters only illustrate prepare / commit / rollback ordering (replace with reservations, audit writes, etc.)
+    let prepare_count = Arc::new(AtomicUsize::new(0));
+    let commit_count = Arc::new(AtomicUsize::new(0));
+    let rollback_count = Arc::new(AtomicUsize::new(0));
+
     let executor = DoubleCheckedLockExecutor::builder()
+        // Logging: chain before or after .on / .when (grouped here at the start)
+        .log_unmet_condition(Level::Warn, "double-check: condition not met")
+        .log_prepare_failure(Level::Error, "prepare (before lock) failed")
+        .log_prepare_commit_failure(Level::Error, "prepare commit failed")
+        .log_prepare_rollback_failure(Level::Error, "prepare rollback failed")
         .on(balance.clone())
         .when({
             let frozen = frozen.clone();
             move || !frozen.load(Ordering::Acquire)
         })
+        .prepare({
+            let prepare_count = prepare_count.clone();
+            move || {
+                prepare_count.fetch_add(1, Ordering::AcqRel);
+                Ok::<(), io::Error>(())
+            }
+        })
+        .rollback_prepare({
+            let rollback_count = rollback_count.clone();
+            move || {
+                rollback_count.fetch_add(1, Ordering::AcqRel);
+                Ok::<(), io::Error>(())
+            }
+        })
+        .commit_prepare({
+            let commit_count = commit_count.clone();
+            move || {
+                commit_count.fetch_add(1, Ordering::AcqRel);
+                Ok::<(), io::Error>(())
+            }
+        })
         .build();
 
-    let result = executor
+    // Success: prepare → task ok → commit_prepare
+    let ok = executor
         .call_with(|latest: &mut i32| read_balance(latest))
         .get_result();
+    assert!(matches!(ok, ExecutionResult::Success(1_000)));
+    assert_eq!(prepare_count.load(Ordering::Acquire), 1);
+    assert_eq!(commit_count.load(Ordering::Acquire), 1);
+    assert_eq!(rollback_count.load(Ordering::Acquire), 0);
 
-    assert!(result.is_success());
-    assert_eq!(result.unwrap(), 1_000);
+    // Task error after successful prepare → rollback_prepare; result remains the task failure
+    let fail = executor
+        .call_with(|_: &mut i32| Err::<i32, _>(io::Error::other("ledger mismatch")))
+        .get_result();
+    assert!(matches!(
+        fail,
+        ExecutionResult::Failed(ExecutorError::TaskFailed(_))
+    ));
+    assert_eq!(prepare_count.load(Ordering::Acquire), 2);
+    assert_eq!(commit_count.load(Ordering::Acquire), 1);
+    assert_eq!(rollback_count.load(Ordering::Acquire), 1);
+
+    // Predicate false up front: no lock, no task, no prepare / commit / rollback
+    frozen.store(true, Ordering::Release);
+    let skipped = executor
+        .call_with(|latest: &mut i32| read_balance(latest))
+        .get_result();
+    assert!(matches!(skipped, ExecutionResult::ConditionNotMet));
+    assert_eq!(prepare_count.load(Ordering::Acquire), 2);
 }
 ```
 
@@ -345,6 +460,8 @@ thread panics while holding the lock.
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.new) - Create a new monitor
 - [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.read) - Read protected state
 - [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.write) - Mutate protected state
+- [`wait_timeout(&self, timeout: Duration) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.wait_timeout) - Wait on the condition variable for at most `timeout` (no predicate)
+- [`wait_timeout_until<P, F, R>(&self, timeout: Duration, ready: P, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.wait_timeout_until) - Wait until a predicate is true, then mutate the state, with an overall time limit
 - [`wait_until<P, F, R>(&self, ready: P, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.wait_until) - Wait until a predicate is true, then mutate the state
 - [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_one) - Wake one waiting thread
 - [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_all) - Wake all waiting threads
@@ -358,6 +475,8 @@ threads without writing `Arc::new(Monitor::new(...))`.
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.new) - Create a new shared monitor
 - [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.read) - Read protected state
 - [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.write) - Mutate protected state
+- [`wait_timeout(&self, timeout: Duration) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_timeout) - Wait on the condition variable for at most `timeout` (no predicate)
+- [`wait_timeout_until<P, F, R>(&self, timeout: Duration, ready: P, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_timeout_until) - Wait until a predicate is true, then mutate the state, with an overall time limit
 - [`wait_until<P, F, R>(&self, ready: P, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_until) - Wait until a predicate is true, then mutate the state
 - [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_one) - Wake one waiting thread
 - [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_all) - Wake all waiting threads
@@ -437,6 +556,7 @@ Reusable executor for the double-checked locking API; see [`DoubleCheckedLockExe
 
 **Typical flow:**
 - [`DoubleCheckedLockExecutor::builder`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.builder) — create the reusable executor builder
+- (Optional) [`ExecutorBuilder::log_unmet_condition`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_unmet_condition) / [`log_prepare_failure`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_prepare_failure) / [`log_prepare_commit_failure`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_prepare_commit_failure) / [`log_prepare_rollback_failure`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_prepare_rollback_failure) — emit `log` lines for unmet conditions and prepare lifecycle failures (the same methods exist on `ExecutorLockBuilder` and `ExecutorReadyBuilder` so you can insert them at different builder stages)
 - [`ExecutorBuilder::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.on) — attach a [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) handle (for example a cloned [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html) or [`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html))
 - [`ExecutorLockBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorLockBuilder.html#method.when) — fast-path predicate (evaluated twice: outside and inside the lock)
 - Optional [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorReadyBuilder.html#method.prepare) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorReadyBuilder.html#method.rollback_prepare) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorReadyBuilder.html#method.commit_prepare) — fallible `Runnable` hooks

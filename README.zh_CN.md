@@ -51,7 +51,7 @@ Qubit Concurrent 为同步和异步锁提供易于使用的包装器，为 Rust 
 
 ```toml
 [dependencies]
-qubit-concurrent = "0.5.1"
+  qubit-concurrent = "0.6.0"
 ```
 
 ## 快速开始
@@ -205,10 +205,19 @@ fn main() {
 
 ### 基于条件的 Monitor
 
+`Monitor<T>` 将 `std::sync::Mutex<T>` 和 `std::sync::Condvar` 封装成一个
+monitor 对象。它没有替换标准库的同步机制，而是把“受保护状态”和“等待该状态变化的
+条件变量”绑定在一起，调用方不再需要手动保存两个字段并维护它们的对应关系。
+
+短临界区可使用 `read` 和 `write`。常见的 guarded suspension 场景可使用
+`wait_while` 或 `wait_until`。更复杂的状态机可调用 `lock` 获取
+`MonitorGuard`，然后在自己的循环中调用 `MonitorGuard::wait` 或
+`MonitorGuard::wait_timeout`。
+
 ```rust
 use std::thread;
 
-use qubit_concurrent::ArcMonitor;
+use qubit_concurrent::lock::ArcMonitor;
 
 fn main() {
     let monitor = ArcMonitor::new(Vec::<String>::new());
@@ -233,38 +242,142 @@ fn main() {
 }
 ```
 
+guard API 保留了标准 `Condvar` 循环的形状，但 guard 自己知道它属于哪个
+monitor：
+
+```rust
+use std::{
+    thread,
+    time::Duration,
+};
+
+use qubit_concurrent::lock::{ArcMonitor, WaitTimeoutStatus};
+
+fn main() {
+    let monitor = ArcMonitor::new(Vec::<String>::new());
+    let worker_monitor = monitor.clone();
+
+    let worker = thread::spawn(move || {
+        let mut messages = worker_monitor.lock();
+        while messages.is_empty() {
+            let (next_messages, status) = messages.wait_timeout(Duration::from_secs(1));
+            messages = next_messages;
+            if status == WaitTimeoutStatus::TimedOut && messages.is_empty() {
+                return None;
+            }
+        }
+        messages.pop()
+    });
+
+    monitor.write(|messages| {
+        messages.push("ready".to_string());
+    });
+    monitor.notify_one();
+
+    assert_eq!(
+        worker.join().expect("worker should finish"),
+        Some("ready".to_string()),
+    );
+}
+```
+
 ### 双重检查锁
 
 当廉价标志已能排除读路径时（例如账户已**冻结**），可跳过加锁与昂贵的余额读取。同一条件会在加锁后再判断一次，避免在快路径通过之后、持锁前被冻结时仍执行高成本的 `read_balance`。
 
-```rust
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use qubit_concurrent::{DoubleCheckedLockExecutor, ArcMutex, lock::Lock};
+执行器在**第一次**条件通过后、加锁前可运行可选的 **`prepare`**；持锁内会**再次**判断条件并执行任务。若配置了 `prepare` 且其已成功，则在释放锁之后：任务成功时运行 **`commit_prepare`**，第二次条件不满足或任务失败时运行 **`rollback_prepare`**。
 
-fn read_balance(latest: &i32) -> Result<i32, std::io::Error> {
+日志均通过 [`log`](https://docs.rs/log/latest/log/) 门面输出；下列 `log_*` 仅在对应事件发生时写入。要让日志出现在终端或文件中，请在应用中注册具体实现（例如在二进制 crate 里依赖 `env_logger` 并调用 `env_logger::init()`）；未注册时这些调用为无操作或仅被门面丢弃。
+
+```rust
+use std::io;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use log::Level;
+use qubit_concurrent::{
+    ArcMutex,
+    DoubleCheckedLockExecutor,
+    double_checked::{ExecutionResult, ExecutorError},
+    lock::Lock,
+};
+
+fn read_balance(latest: &i32) -> Result<i32, io::Error> {
     // 高成本：对账、远程校验等
     Ok(*latest)
 }
 
 fn main() {
-    let balance = ArcMutex::new(1_000);
+    let balance = ArcMutex::new(1_000_i32);
     let frozen = Arc::new(AtomicBool::new(false));
 
+    // 仅用于演示 prepare / commit / rollback 的调用次数（真实场景可替换为预留资源、写审计日志等）
+    let prepare_count = Arc::new(AtomicUsize::new(0));
+    let commit_count = Arc::new(AtomicUsize::new(0));
+    let rollback_count = Arc::new(AtomicUsize::new(0));
+
     let executor = DoubleCheckedLockExecutor::builder()
+        // 日志：可在 .on / .when 之前或之后链式配置（此处集中在构建初期）
+        .log_unmet_condition(Level::Warn, "double-check: condition not met")
+        .log_prepare_failure(Level::Error, "prepare (before lock) failed")
+        .log_prepare_commit_failure(Level::Error, "prepare commit failed")
+        .log_prepare_rollback_failure(Level::Error, "prepare rollback failed")
         .on(balance.clone())
         .when({
             let frozen = frozen.clone();
             move || !frozen.load(Ordering::Acquire)
         })
+        .prepare({
+            let prepare_count = prepare_count.clone();
+            move || {
+                prepare_count.fetch_add(1, Ordering::AcqRel);
+                Ok::<(), io::Error>(())
+            }
+        })
+        .rollback_prepare({
+            let rollback_count = rollback_count.clone();
+            move || {
+                rollback_count.fetch_add(1, Ordering::AcqRel);
+                Ok::<(), io::Error>(())
+            }
+        })
+        .commit_prepare({
+            let commit_count = commit_count.clone();
+            move || {
+                commit_count.fetch_add(1, Ordering::AcqRel);
+                Ok::<(), io::Error>(())
+            }
+        })
         .build();
 
-    let result = executor
+    // 成功路径：prepare → 任务成功 → commit_prepare
+    let ok = executor
         .call_with(|latest: &mut i32| read_balance(latest))
         .get_result();
+    assert!(matches!(ok, ExecutionResult::Success(1_000)));
+    assert_eq!(prepare_count.load(Ordering::Acquire), 1);
+    assert_eq!(commit_count.load(Ordering::Acquire), 1);
+    assert_eq!(rollback_count.load(Ordering::Acquire), 0);
 
-    assert!(result.is_success());
-    assert_eq!(result.unwrap(), 1_000);
+    // 任务失败：prepare 已成功 → rollback_prepare，结果仍为任务错误
+    let fail = executor
+        .call_with(|_: &mut i32| Err::<i32, _>(io::Error::other("ledger mismatch")))
+        .get_result();
+    assert!(matches!(
+        fail,
+        ExecutionResult::Failed(ExecutorError::TaskFailed(_))
+    ));
+    assert_eq!(prepare_count.load(Ordering::Acquire), 2);
+    assert_eq!(commit_count.load(Ordering::Acquire), 1);
+    assert_eq!(rollback_count.load(Ordering::Acquire), 1);
+
+    // 条件不满足（例如已冻结）：不会加锁执行任务，也不会进入 prepare / commit / rollback
+    frozen.store(true, Ordering::Release);
+    let skipped = executor
+        .call_with(|latest: &mut i32| read_balance(latest))
+        .get_result();
+    assert!(matches!(skipped, ExecutionResult::ConditionNotMet));
+    assert_eq!(prepare_count.load(Ordering::Acquire), 2);
 }
 ```
 
@@ -311,6 +424,8 @@ fn main() {
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.new) - 创建新的 monitor
 - [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.read) - 读取受保护状态
 - [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.write) - 修改受保护状态
+- [`wait_timeout(&self, timeout: Duration) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.wait_timeout) - 在条件变量上等待至多 `timeout`（无谓词）
+- [`wait_timeout_until<P, F, R>(&self, timeout: Duration, ready: P, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.wait_timeout_until) - 在总时限内等待条件为真，然后修改状态
 - [`wait_until<P, F, R>(&self, ready: P, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.wait_until) - 等待条件为真，然后修改状态
 - [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_one) - 唤醒一个等待线程
 - [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.Monitor.html#method.notify_all) - 唤醒所有等待线程
@@ -324,6 +439,8 @@ fn main() {
 - [`new(data: T) -> Self`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.new) - 创建新的共享 monitor
 - [`read<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.read) - 读取受保护状态
 - [`write<F, R>(&self, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.write) - 修改受保护状态
+- [`wait_timeout(&self, timeout: Duration) -> bool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_timeout) - 在条件变量上等待至多 `timeout`（无谓词）
+- [`wait_timeout_until<P, F, R>(&self, timeout: Duration, ready: P, f: F) -> Option<R>`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_timeout_until) - 在总时限内等待条件为真，然后修改状态
 - [`wait_until<P, F, R>(&self, ready: P, f: F) -> R`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.wait_until) - 等待条件为真，然后修改状态
 - [`notify_one(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_one) - 唤醒一个等待线程
 - [`notify_all(&self)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/lock/struct.ArcMonitor.html#method.notify_all) - 唤醒所有等待线程
@@ -403,6 +520,7 @@ Service 相关类型位于 `task::service` 模块。
 
 **典型步骤：**
 - [`DoubleCheckedLockExecutor::builder`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.DoubleCheckedLockExecutor.html#method.builder) — 创建可复用执行器的构建器
+- （可选）[`ExecutorBuilder::log_unmet_condition`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_unmet_condition) / [`log_prepare_failure`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_prepare_failure) / [`log_prepare_commit_failure`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_prepare_commit_failure) / [`log_prepare_rollback_failure`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.log_prepare_rollback_failure) — 通过 `log` 门面记录条件未满足与 prepare 生命周期失败（`ExecutorLockBuilder` 与 `ExecutorReadyBuilder` 上也有同名方法，可在链式构建的任意阶段插入）
 - [`ExecutorBuilder::on`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorBuilder.html#method.on) — 绑定实现 [`Lock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/trait.Lock.html) 的句柄（例如克隆后的 [`ArcMutex`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcMutex.html)、[`ArcRwLock`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ArcRwLock.html)）
 - [`ExecutorLockBuilder::when`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorLockBuilder.html#method.when) — 快路径条件（在锁外与锁内各执行一次）
 - 可选 [`prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorReadyBuilder.html#method.prepare) / [`rollback_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorReadyBuilder.html#method.rollback_prepare) / [`commit_prepare`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/struct.ExecutorReadyBuilder.html#method.commit_prepare) — 可失败 `Runnable` 钩子

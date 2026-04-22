@@ -87,91 +87,42 @@ pub struct DoubleCheckedLockExecutor<L = (), T = ()> {
     _phantom: PhantomData<fn() -> T>,
 }
 
-/// Initial builder for [`DoubleCheckedLockExecutor`].
-///
-/// This state has no lock yet. Call [`Self::on`] to attach the lock.
-///
-/// # Author
-///
-/// Haixing Hu
-#[derive(Debug, Default, Clone)]
-pub struct DoubleCheckedLockExecutorBuilder {
-    /// Optional logger carried forward to later builder states.
-    logger: Option<ExecutionLogger>,
-}
-
-/// Builder state after a lock has been attached.
-///
-/// Call [`Self::when`] to configure the required condition tester.
-///
-/// # Type Parameters
-///
-/// * `L` - The lock type implementing [`Lock<T>`].
-/// * `T` - The data type protected by the lock.
-///
-/// # Author
-///
-/// Haixing Hu
-#[derive(Clone)]
-pub struct DoubleCheckedLockExecutorLockBuilder<L, T> {
-    /// The lock to store in the executor.
-    lock: L,
-
-    /// Optional logger carried forward to the ready builder state.
-    logger: Option<ExecutionLogger>,
-
-    /// Carries the protected data type.
-    _phantom: PhantomData<fn() -> T>,
-}
-
-/// Builder state after the required condition tester has been configured.
-///
-/// This state can configure prepare lifecycle callbacks and build the final
-/// [`DoubleCheckedLockExecutor`].
-///
-/// # Type Parameters
-///
-/// * `L` - The lock type implementing [`Lock<T>`].
-/// * `T` - The data type protected by the lock.
-///
-/// # Author
-///
-/// Haixing Hu
-#[derive(Clone)]
-pub struct DoubleCheckedLockExecutorReadyBuilder<L, T> {
-    /// The lock to store in the executor.
-    lock: L,
-
-    /// Required condition tester.
-    tester: ArcTester,
-
-    /// Optional logger used by the executor.
-    logger: Option<ExecutionLogger>,
-
-    /// Optional action executed after the first check and before locking.
-    prepare_action: Option<ArcRunnable<String>>,
-
-    /// Optional action executed when prepare must be rolled back.
-    rollback_prepare_action: Option<ArcRunnable<String>>,
-
-    /// Optional action executed when prepare should be committed.
-    commit_prepare_action: Option<ArcRunnable<String>>,
-
-    /// Carries the protected data type.
-    _phantom: PhantomData<fn() -> T>,
-}
-
-impl DoubleCheckedLockExecutor<(), ()> {
-    /// Creates a builder for a reusable double-checked lock executor.
+impl<L, T> DoubleCheckedLockExecutor<L, T> {
+    /// Assembles an executor from builder state (lock, tester, optional hooks).
+    ///
+    /// # Parameters
+    ///
+    /// * `lock` - Lock protecting the target data.
+    /// * `tester` - Condition evaluated before and after lock acquisition.
+    /// * `logger` - Optional logger used for unmet conditions and prepare
+    ///   lifecycle failures.
+    /// * `prepare_action` - Optional action run before lock acquisition.
+    /// * `rollback_prepare_action` - Optional action run when a completed
+    ///   prepare action must be rolled back.
+    /// * `commit_prepare_action` - Optional action run when a completed
+    ///   prepare action should be committed.
     ///
     /// # Returns
     ///
-    /// A builder in the initial state. Attach a lock with
-    /// [`DoubleCheckedLockExecutorBuilder::on`], then configure a tester with
-    /// [`DoubleCheckedLockExecutorLockBuilder::when`].
+    /// A reusable executor containing the supplied builder state.
     #[inline]
-    pub fn builder() -> DoubleCheckedLockExecutorBuilder {
-        DoubleCheckedLockExecutorBuilder::default()
+    pub(in crate::double_checked) fn from_builder_state(
+        lock: L,
+        tester: ArcTester,
+        logger: Option<ExecutionLogger>,
+        prepare_action: Option<ArcRunnable<String>>,
+        rollback_prepare_action: Option<ArcRunnable<String>>,
+        commit_prepare_action: Option<ArcRunnable<String>>,
+    ) -> Self {
+        Self {
+            lock,
+            tester,
+            logger,
+            prepare_action,
+            rollback_prepare_action,
+            commit_prepare_action,
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -269,6 +220,15 @@ where
     }
 
     /// Executes a zero-argument callable through the double-checked sequence.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to run when both condition checks pass.
+    ///
+    /// # Returns
+    ///
+    /// An [`ExecutionContext`] containing success, unmet-condition, or failure
+    /// information.
     fn call_callable<C, R, E>(&self, task: C) -> ExecutionContext<R, E>
     where
         C: Callable<R, E> + Send + 'static,
@@ -290,6 +250,13 @@ where
     /// # Returns
     ///
     /// The final execution result, including prepare finalization.
+    ///
+    /// # Errors
+    ///
+    /// Task errors are captured as [`ExecutionResult::Failed`] with
+    /// [`super::ExecutorError::TaskFailed`]. Prepare, commit, and rollback
+    /// failures are also captured in the returned [`ExecutionResult`] rather
+    /// than returned as a separate `Result`.
     fn execute_with_write_lock<R, E, F>(&self, task: F) -> ExecutionResult<R, E>
     where
         E: Display + Send + 'static,
@@ -329,6 +296,11 @@ where
     ///
     /// `Ok(true)` if prepare exists and succeeds, `Ok(false)` if no prepare
     /// action is configured, or `Err(message)` if prepare fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(message)` when the configured prepare action returns an
+    /// error. The message is already converted to [`String`].
     fn run_prepare_action(&self) -> Result<bool, String> {
         let Some(mut prepare_action) = self.prepare_action.clone() else {
             return Ok(false);
@@ -347,6 +319,15 @@ where
     /// Commits or rolls back a successfully completed prepare action.
     ///
     /// This method runs after the write lock has been released.
+    ///
+    /// # Parameters
+    ///
+    /// * `result` - Result produced by the condition check and task execution.
+    ///
+    /// # Returns
+    ///
+    /// `result` unchanged when no finalization action fails. Returns a failed
+    /// result when prepare commit or prepare rollback fails.
     fn finalize_prepare<R, E>(&self, mut result: ExecutionResult<R, E>) -> ExecutionResult<R, E>
     where
         E: Display + Send + 'static,
@@ -385,211 +366,11 @@ where
     }
 
     /// Logs that the double-checked condition was not met.
+    ///
+    /// This method writes through the configured logger, if any.
     fn log_unmet_condition(&self) {
         if let Some(ref logger) = self.logger {
             logger.log_unmet_message();
-        }
-    }
-}
-
-impl DoubleCheckedLockExecutorBuilder {
-    /// Configures logging before the lock is attached.
-    ///
-    /// # Parameters
-    ///
-    /// * `level` - The log level used for double-checked execution events.
-    /// * `message` - The message logged when the condition is not met.
-    ///
-    /// # Returns
-    ///
-    /// This builder with logging configured.
-    #[inline]
-    pub fn logger(mut self, level: log::Level, message: &str) -> Self {
-        self.logger = Some(ExecutionLogger::new(level, message));
-        self
-    }
-
-    /// Attaches the lock protected by this executor.
-    ///
-    /// # Parameters
-    ///
-    /// * `lock` - The lock handle. Arc-based lock wrappers can be cloned and
-    ///   stored here for reusable execution.
-    ///
-    /// # Returns
-    ///
-    /// The builder state that can configure the required tester.
-    #[inline]
-    pub fn on<L, T>(self, lock: L) -> DoubleCheckedLockExecutorLockBuilder<L, T>
-    where
-        L: Lock<T>,
-    {
-        DoubleCheckedLockExecutorLockBuilder {
-            lock,
-            logger: self.logger,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<L, T> DoubleCheckedLockExecutorLockBuilder<L, T>
-where
-    L: Lock<T>,
-{
-    /// Configures logging after the lock is attached.
-    ///
-    /// # Parameters
-    ///
-    /// * `level` - The log level used for double-checked execution events.
-    /// * `message` - The message logged when the condition is not met.
-    ///
-    /// # Returns
-    ///
-    /// This builder with logging configured.
-    #[inline]
-    pub fn logger(mut self, level: log::Level, message: &str) -> Self {
-        self.logger = Some(ExecutionLogger::new(level, message));
-        self
-    }
-
-    /// Configures the required double-checked condition.
-    ///
-    /// The tester is executed outside and inside the lock. State read by the
-    /// outside check must be safe to access without this executor's lock.
-    ///
-    /// # Parameters
-    ///
-    /// * `tester` - The reusable condition tester.
-    ///
-    /// # Returns
-    ///
-    /// The builder state that can configure prepare callbacks and build the
-    /// executor.
-    #[inline]
-    pub fn when<Tst>(self, tester: Tst) -> DoubleCheckedLockExecutorReadyBuilder<L, T>
-    where
-        Tst: Tester + Send + Sync + 'static,
-    {
-        DoubleCheckedLockExecutorReadyBuilder {
-            lock: self.lock,
-            tester: tester.into_arc(),
-            logger: self.logger,
-            prepare_action: None,
-            rollback_prepare_action: None,
-            commit_prepare_action: None,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<L, T> DoubleCheckedLockExecutorReadyBuilder<L, T>
-where
-    L: Lock<T>,
-{
-    /// Configures logging after the tester is set.
-    ///
-    /// # Parameters
-    ///
-    /// * `level` - The log level used for double-checked execution events.
-    /// * `message` - The message logged when the condition is not met.
-    ///
-    /// # Returns
-    ///
-    /// This builder with logging configured.
-    #[inline]
-    pub fn logger(mut self, level: log::Level, message: &str) -> Self {
-        self.logger = Some(ExecutionLogger::new(level, message));
-        self
-    }
-
-    /// Sets the prepare action.
-    ///
-    /// The action runs after the first condition check succeeds and before the
-    /// lock is acquired. If it succeeds, the executor will later run either
-    /// rollback or commit according to the final task result.
-    ///
-    /// # Parameters
-    ///
-    /// * `prepare_action` - The fallible action to run before locking.
-    ///
-    /// # Returns
-    ///
-    /// This builder with prepare configured.
-    #[inline]
-    pub fn prepare<Rn, E>(mut self, prepare_action: Rn) -> Self
-    where
-        Rn: Runnable<E> + Send + 'static,
-        E: Display + Send + 'static,
-    {
-        let mut action = prepare_action;
-        self.prepare_action = Some(ArcRunnable::new(move || {
-            action.run().map_err(|error| error.to_string())
-        }));
-        self
-    }
-
-    /// Sets the rollback action for a successfully completed prepare action.
-    ///
-    /// # Parameters
-    ///
-    /// * `rollback_prepare_action` - The action to run if the second condition
-    ///   check or task execution fails after prepare succeeds.
-    ///
-    /// # Returns
-    ///
-    /// This builder with prepare rollback configured.
-    #[inline]
-    pub fn rollback_prepare<Rn, E>(mut self, rollback_prepare_action: Rn) -> Self
-    where
-        Rn: Runnable<E> + Send + 'static,
-        E: Display + Send + 'static,
-    {
-        let mut action = rollback_prepare_action;
-        self.rollback_prepare_action = Some(ArcRunnable::new(move || {
-            action.run().map_err(|error| error.to_string())
-        }));
-        self
-    }
-
-    /// Sets the commit action for a successfully completed prepare action.
-    ///
-    /// # Parameters
-    ///
-    /// * `commit_prepare_action` - The action to run if the task succeeds after
-    ///   prepare succeeds.
-    ///
-    /// # Returns
-    ///
-    /// This builder with prepare commit configured.
-    #[inline]
-    pub fn commit_prepare<Rn, E>(mut self, commit_prepare_action: Rn) -> Self
-    where
-        Rn: Runnable<E> + Send + 'static,
-        E: Display + Send + 'static,
-    {
-        let mut action = commit_prepare_action;
-        self.commit_prepare_action = Some(ArcRunnable::new(move || {
-            action.run().map_err(|error| error.to_string())
-        }));
-        self
-    }
-
-    /// Builds the reusable executor.
-    ///
-    /// # Returns
-    ///
-    /// A [`DoubleCheckedLockExecutor`] containing the configured lock, tester,
-    /// logger, and prepare lifecycle callbacks.
-    #[inline]
-    pub fn build(self) -> DoubleCheckedLockExecutor<L, T> {
-        DoubleCheckedLockExecutor {
-            lock: self.lock,
-            tester: self.tester,
-            logger: self.logger,
-            prepare_action: self.prepare_action,
-            rollback_prepare_action: self.rollback_prepare_action,
-            commit_prepare_action: self.commit_prepare_action,
-            _phantom: PhantomData,
         }
     }
 }
@@ -605,6 +386,15 @@ where
         E: Display + Send + 'static;
 
     /// Executes the callable through the configured double-checked lock.
+    ///
+    /// # Parameters
+    ///
+    /// * `task` - Callable to run when both condition checks pass.
+    ///
+    /// # Returns
+    ///
+    /// An [`ExecutionContext`] containing success, unmet-condition, or failure
+    /// information.
     #[inline]
     fn call<C, R, E>(&self, task: C) -> Self::Execution<R, E>
     where

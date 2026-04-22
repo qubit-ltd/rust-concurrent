@@ -7,6 +7,7 @@
  *
  ******************************************************************************/
 mod config_tests;
+mod double_checked_lock_executor_builder_tests;
 mod double_checked_lock_executor_tests;
 mod error_tests;
 mod result_tests;

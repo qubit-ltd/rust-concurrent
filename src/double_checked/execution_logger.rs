@@ -51,6 +51,16 @@ pub struct ExecutionLogger {
 
 impl ExecutionLogger {
     /// Creates a logger with default prepare lifecycle prefixes.
+    ///
+    /// # Parameters
+    ///
+    /// * `level` - Log level used for unmet-condition messages.
+    /// * `unmet_message` - Message logged when the double-checked condition is
+    ///   not met.
+    ///
+    /// # Returns
+    ///
+    /// An enabled logger configured with default prepare lifecycle messages.
     #[inline]
     pub fn new(level: log::Level, unmet_message: impl Into<String>) -> Self {
         Self {
@@ -64,6 +74,8 @@ impl ExecutionLogger {
     }
 
     /// Logs the configured unmet message at [`Self::level`] when [`Self::enabled`].
+    ///
+    /// This method writes through the global `log` facade when enabled.
     #[inline]
     pub fn log_unmet_message(&self) {
         if !self.enabled {
@@ -73,6 +85,11 @@ impl ExecutionLogger {
     }
 
     /// Logs a prepare-action failure at error level when [`Self::enabled`].
+    ///
+    /// # Parameters
+    ///
+    /// * `err` - Error value to append to the configured prepare-failure
+    ///   prefix.
     #[inline]
     pub fn log_prepare_failed<E: fmt::Display>(&self, err: E) {
         if !self.enabled {
@@ -82,6 +99,10 @@ impl ExecutionLogger {
     }
 
     /// Logs a prepare commit failure at error level when [`Self::enabled`].
+    ///
+    /// # Parameters
+    ///
+    /// * `err` - Error value to append to the configured prepare-commit prefix.
     #[inline]
     pub fn log_prepare_commit_failed<E: fmt::Display>(&self, err: E) {
         if !self.enabled {
@@ -91,6 +112,11 @@ impl ExecutionLogger {
     }
 
     /// Logs a prepare rollback failure at error level when [`Self::enabled`].
+    ///
+    /// # Parameters
+    ///
+    /// * `err` - Error value to append to the configured prepare-rollback
+    ///   prefix.
     #[inline]
     pub fn log_prepare_rollback_failed<E: fmt::Display>(&self, err: E) {
         if !self.enabled {

@@ -36,6 +36,7 @@ pub struct ExecutionContext<T, E>
 where
     E: std::fmt::Display,
 {
+    /// Result produced by the double-checked execution.
     result: ExecutionResult<T, E>,
 }
 
@@ -48,6 +49,10 @@ where
     /// # Arguments
     ///
     /// * `result` - The execution result
+    ///
+    /// # Returns
+    ///
+    /// A context wrapping the supplied result.
     #[inline]
     pub(super) fn new(result: ExecutionResult<T, E>) -> Self {
         Self { result }
@@ -58,18 +63,30 @@ where
     /// Prepare commit or rollback callbacks have already been executed by the
     /// builder before this context was created. This method does not trigger
     /// additional side effects.
+    ///
+    /// # Returns
+    ///
+    /// The owned [`ExecutionResult`] stored in this context.
     #[inline]
     pub fn get_result(self) -> ExecutionResult<T, E> {
         self.result
     }
 
     /// Checks the execution result (does not consume the context)
+    ///
+    /// # Returns
+    ///
+    /// A shared reference to the stored [`ExecutionResult`].
     #[inline]
     pub fn peek_result(&self) -> &ExecutionResult<T, E> {
         &self.result
     }
 
     /// Checks if execution was successful
+    ///
+    /// # Returns
+    ///
+    /// `true` if the stored result is [`ExecutionResult::Success`].
     #[inline]
     pub fn is_success(&self) -> bool {
         self.result.is_success()
@@ -84,6 +101,11 @@ where
     /// Completes execution (for operations without return values)
     ///
     /// Returns whether the execution was successful
+    ///
+    /// # Returns
+    ///
+    /// `true` if the stored result is [`ExecutionResult::Success`] containing
+    /// `()`.
     #[inline]
     pub fn finish(self) -> bool {
         let result = self.get_result();

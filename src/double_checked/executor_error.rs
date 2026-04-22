@@ -75,6 +75,15 @@ impl<E> fmt::Display for ExecutorError<E>
 where
     E: fmt::Display,
 {
+    /// Formats this executor error for user-facing diagnostics.
+    ///
+    /// # Parameters
+    ///
+    /// * `f` - Formatter receiving the human-readable error text.
+    ///
+    /// # Returns
+    ///
+    /// [`fmt::Result`] from writing the formatted error text.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExecutorError::TaskFailed(e) => {

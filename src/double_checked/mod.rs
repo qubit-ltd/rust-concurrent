@@ -16,14 +16,15 @@
 //! Haixing Hu
 
 pub mod double_checked_lock_executor;
+pub mod double_checked_lock_executor_builder;
 pub mod execution_context;
 pub mod execution_logger;
 pub mod execution_result;
 pub mod executor_config;
 pub mod executor_error;
 
-pub use double_checked_lock_executor::{
-    DoubleCheckedLockExecutor,
+pub use double_checked_lock_executor::DoubleCheckedLockExecutor;
+pub use double_checked_lock_executor_builder::{
     DoubleCheckedLockExecutorBuilder,
     DoubleCheckedLockExecutorLockBuilder,
     DoubleCheckedLockExecutorReadyBuilder,

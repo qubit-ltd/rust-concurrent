@@ -6,6 +6,7 @@ use std::convert::Infallible;
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use qubit_concurrent::task::service::{ExecutorService, ThreadPool};
+use rayon::{ThreadPoolBuilder, prelude::*};
 
 /// Runs one batch of no-op tasks and waits until the pool terminates.
 fn run_noop_batch(pool_size: usize, task_count: usize) {
@@ -35,6 +36,15 @@ fn run_cpu_light_batch(pool_size: usize, task_count: usize) {
     run_cpu_work_batch(pool_size, task_count, 128);
 }
 
+/// Performs a deterministic amount of CPU work for one task.
+fn compute_cpu_work(inner_iters: usize) -> usize {
+    let mut acc = 0usize;
+    for i in 0..inner_iters {
+        acc = acc.wrapping_add(black_box(i));
+    }
+    acc
+}
+
 /// Runs one batch of CPU tasks with configurable per-task work and waits until
 /// the pool terminates.
 fn run_cpu_work_batch(pool_size: usize, task_count: usize, inner_iters: usize) {
@@ -43,13 +53,7 @@ fn run_cpu_work_batch(pool_size: usize, task_count: usize, inner_iters: usize) {
     for _ in 0..task_count {
         let iterations = inner_iters;
         let handle = pool
-            .submit_callable(move || {
-                let mut acc = 0usize;
-                for i in 0..iterations {
-                    acc = acc.wrapping_add(black_box(i));
-                }
-                Ok::<usize, Infallible>(acc)
-            })
+            .submit_callable(move || Ok::<usize, Infallible>(compute_cpu_work(iterations)))
             .expect("task should be accepted");
         handles.push(handle);
     }
@@ -64,6 +68,21 @@ fn run_cpu_work_batch(pool_size: usize, task_count: usize, inner_iters: usize) {
         .build()
         .expect("tokio runtime should be created")
         .block_on(pool.await_termination());
+}
+
+/// Runs one batch with Rayon using equivalent task count and per-task work.
+fn run_rayon_cpu_work_batch(worker_count: usize, task_count: usize, inner_iters: usize) {
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(worker_count)
+        .build()
+        .expect("rayon thread pool should be created");
+    let sum = pool.install(|| {
+        (0..task_count)
+            .into_par_iter()
+            .map(|_| compute_cpu_work(inner_iters))
+            .reduce(|| 0usize, usize::wrapping_add)
+    });
+    black_box(sum);
 }
 
 /// Benchmarks throughput under different worker counts and task types.
@@ -83,6 +102,33 @@ fn bench_thread_pool_throughput(c: &mut Criterion) {
             &worker_count,
             |b, &wc| b.iter(|| run_cpu_light_batch(wc, task_count)),
         );
+    }
+    group.finish();
+}
+
+/// Compares thread pool throughput against Rayon on the same workload model.
+fn bench_thread_pool_vs_rayon(c: &mut Criterion) {
+    let mut group = c.benchmark_group("thread_pool_vs_rayon");
+    let workers = [1usize, 4, 8];
+    let granularities = [256usize, 2_048];
+    let total_iters = 2_048_000usize;
+    for worker_count in workers {
+        for inner_iters in granularities {
+            let task_count = total_iters / inner_iters;
+            group.throughput(Throughput::Elements(task_count as u64));
+            let thread_pool_id = format!("thread_pool/workers={worker_count}/iters={inner_iters}");
+            group.bench_with_input(
+                BenchmarkId::from_parameter(thread_pool_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_cpu_work_batch(wc, task_count, inner_iters)),
+            );
+            let rayon_id = format!("rayon/workers={worker_count}/iters={inner_iters}");
+            group.bench_with_input(
+                BenchmarkId::from_parameter(rayon_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_rayon_cpu_work_batch(wc, task_count, inner_iters)),
+            );
+        }
     }
     group.finish();
 }
@@ -109,6 +155,6 @@ fn bench_thread_pool_granularity(c: &mut Criterion) {
 criterion_group!(
     name = benches;
     config = Criterion::default().sample_size(20);
-    targets = bench_thread_pool_throughput, bench_thread_pool_granularity
+    targets = bench_thread_pool_throughput, bench_thread_pool_granularity, bench_thread_pool_vs_rayon
 );
 criterion_main!(benches);

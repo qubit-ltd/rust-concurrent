@@ -679,6 +679,7 @@ dependencies = [
  "qubit-atomic",
  "qubit-common",
  "qubit-function",
+ "rayon",
  "thiserror",
  "tokio",
 ]

@@ -45,6 +45,7 @@ qubit-function = "0.10"
 [dev-dependencies]
 tokio = { version = "1.5", features = ["macros", "rt-multi-thread", "time"] }
 criterion = "0.5"
+rayon = "1.12"
 
 [[bench]]
 name = "thread_pool_bench"

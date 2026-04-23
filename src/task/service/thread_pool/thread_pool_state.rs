@@ -16,8 +16,16 @@ use super::thread_pool_lifecycle::ThreadPoolLifecycle;
 pub(super) struct ThreadPoolState {
     /// Current lifecycle state controlling submissions and worker exits.
     pub(super) lifecycle: ThreadPoolLifecycle,
-    /// FIFO queue of accepted jobs waiting for a worker.
+    /// Global fallback FIFO queue for accepted jobs waiting for a worker.
+    ///
+    /// Most jobs may be dispatched into per-worker local queues first. This
+    /// global queue is kept as an injection fallback and as a migration target
+    /// when workers retire.
     pub(super) queue: VecDeque<PoolJob>,
+    /// Number of accepted jobs that are queued but not started yet.
+    ///
+    /// This includes jobs in the global queue and all per-worker local queues.
+    pub(super) queued_tasks: usize,
     /// Optional maximum number of queued jobs.
     pub(super) queue_capacity: Option<usize>,
     /// Number of jobs currently held by workers.
@@ -75,6 +83,7 @@ impl ThreadPoolState {
         Self {
             lifecycle: ThreadPoolLifecycle::Running,
             queue: VecDeque::new(),
+            queued_tasks: 0,
             queue_capacity: config.queue_capacity,
             running_tasks: 0,
             live_workers: 0,
@@ -97,7 +106,7 @@ impl ThreadPoolState {
     /// `true` when the queue has a configured capacity and has reached it.
     pub(super) fn is_saturated(&self) -> bool {
         self.queue_capacity
-            .is_some_and(|capacity| self.queue.len() >= capacity)
+            .is_some_and(|capacity| self.queued_tasks >= capacity)
     }
 
     /// Returns whether the service lifecycle is fully terminated.
@@ -108,7 +117,7 @@ impl ThreadPoolState {
     /// running, and no workers remain live.
     pub(super) fn is_terminated(&self) -> bool {
         !self.lifecycle.is_running()
-            && self.queue.is_empty()
+            && self.queued_tasks == 0
             && self.running_tasks == 0
             && self.live_workers == 0
     }

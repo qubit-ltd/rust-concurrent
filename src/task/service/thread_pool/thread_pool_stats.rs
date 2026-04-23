@@ -69,7 +69,7 @@ impl ThreadPoolStats {
             maximum_pool_size: state.maximum_pool_size,
             live_workers: state.live_workers,
             idle_workers: state.idle_workers,
-            queued_tasks: state.queue.len(),
+            queued_tasks: state.queued_tasks,
             running_tasks: state.running_tasks,
             submitted_tasks: state.submitted_tasks,
             completed_tasks: state.completed_tasks,

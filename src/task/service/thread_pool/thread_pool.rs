@@ -81,7 +81,7 @@ impl ThreadPool {
     /// The number of accepted tasks that have not started yet.
     #[inline]
     pub fn queued_count(&self) -> usize {
-        self.inner.read_state(|state| state.queue.len())
+        self.inner.read_state(|state| state.queued_tasks)
     }
 
     /// Returns the number of tasks currently held by workers.

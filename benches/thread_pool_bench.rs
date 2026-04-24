@@ -300,7 +300,7 @@ fn derive_dataset_iterations(line: &str, line_index: usize) -> usize {
     }
     let mixed = splitmix64(prefix_hash ^ (line_index as u64).wrapping_mul(0x9E37_79B9));
     let light_iters = 96usize + (mixed as usize % 1_024);
-    if mixed % 20 == 0 {
+    if mixed.is_multiple_of(20) {
         // Around 5% records become heavy tasks to model real load skew.
         4_096usize + (mixed as usize % 8_192)
     } else {
@@ -580,9 +580,7 @@ fn parse_pbbs_adjacency_graph(path: &Path) -> Option<(Vec<usize>, Vec<u32>)> {
     let mut edges = Vec::with_capacity(edge_count);
     for index in 0..edge_count {
         let label = format!("edge[{index}]");
-        let Some(raw) = read_required_line(&mut lines, path, &label) else {
-            return None;
-        };
+        let raw = read_required_line(&mut lines, path, &label)?;
         let Ok(neighbor) = raw.parse::<u32>() else {
             eprintln!(
                 "[bench] skip dataset-graph: invalid edge value {} in {}",

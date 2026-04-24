@@ -7,6 +7,7 @@
  *
  ******************************************************************************/
 use std::{
+    cell::Cell,
     collections::VecDeque,
     sync::{
         Arc,
@@ -179,6 +180,9 @@ struct WorkerRuntime {
     queue: Arc<WorkerQueue>,
     /// Owner-only deque used by the worker for batched and stolen jobs.
     local: Worker<PoolJob>,
+    /// Owner-only cursor used to rotate steal victim probing without a shared
+    /// atomic write on every steal attempt.
+    steal_cursor: Cell<usize>,
 }
 
 impl WorkerRuntime {
@@ -195,13 +199,38 @@ impl WorkerRuntime {
     fn new(worker_index: usize) -> Self {
         let local = Worker::new_fifo();
         let queue = Arc::new(WorkerQueue::new(worker_index, local.stealer()));
-        Self { queue, local }
+        Self {
+            queue,
+            local,
+            steal_cursor: Cell::new(worker_index.wrapping_add(1)),
+        }
     }
 
     /// Returns the owning worker index.
     #[inline]
     fn worker_index(&self) -> usize {
         self.queue.worker_index()
+    }
+
+    /// Returns the next steal-probing start index for the given queue count.
+    ///
+    /// # Parameters
+    ///
+    /// * `queue_count` - Number of currently registered worker queues.
+    ///
+    /// # Returns
+    ///
+    /// Start offset for the next victim scan.
+    ///
+    /// # Implementation notes
+    ///
+    /// The cursor is touched only by the owning worker thread, so a [`Cell`]
+    /// gives us round-robin probing without the global atomic contention that
+    /// showed up on steal-heavy paths.
+    fn next_steal_start(&self, queue_count: usize) -> usize {
+        let current = self.steal_cursor.get();
+        self.steal_cursor.set(current.wrapping_add(1));
+        current % queue_count
     }
 }
 
@@ -335,8 +364,6 @@ pub(crate) struct ThreadPoolInner {
     active_worker_count: AtomicUsize,
     /// Round-robin cursor used for submit-path local queue selection.
     next_enqueue_worker: AtomicUsize,
-    /// Round-robin cursor used for steal victim probing.
-    next_steal_worker: AtomicUsize,
     /// Prefix used for naming newly spawned workers.
     thread_name_prefix: String,
     /// Optional stack size in bytes for newly spawned workers.
@@ -422,7 +449,6 @@ impl ThreadPoolInner {
             worker_queues: RwLock::new(Vec::new()),
             active_worker_count: AtomicUsize::new(0),
             next_enqueue_worker: AtomicUsize::new(0),
-            next_steal_worker: AtomicUsize::new(0),
             thread_name_prefix,
             stack_size,
         }
@@ -1048,7 +1074,6 @@ impl ThreadPoolInner {
         _state: &ThreadPoolState,
         worker_runtime: &WorkerRuntime,
     ) -> Option<PoolJob> {
-        let worker_index = worker_runtime.worker_index();
         if let Some(job) = worker_runtime.local.pop() {
             let previous = self.queued_task_count.fetch_sub(1, Ordering::AcqRel);
             debug_assert!(previous > 0, "thread pool queued task counter underflow");
@@ -1072,7 +1097,7 @@ impl ThreadPoolInner {
             return Some(job);
         }
 
-        if let Some(job) = self.try_steal_job_locked(worker_index, &worker_runtime.local) {
+        if let Some(job) = self.try_steal_job_locked(worker_runtime) {
             let previous = self.queued_task_count.fetch_sub(1, Ordering::AcqRel);
             debug_assert!(previous > 0, "thread pool queued task counter underflow");
             self.running_task_count.fetch_add(1, Ordering::AcqRel);
@@ -1093,25 +1118,22 @@ impl ThreadPoolInner {
     ///
     /// # Parameters
     ///
-    /// * `worker_index` - Worker that is requesting stolen work.
-    /// * `local` - Owner-local deque that receives any batched stolen jobs.
+    /// * `worker_runtime` - Runtime of the worker requesting stolen work.
     ///
     /// # Returns
     ///
     /// `Some(job)` when any other worker queue can provide one job.
-    fn try_steal_job_locked(
-        &self,
-        worker_index: usize,
-        local: &Worker<PoolJob>,
-    ) -> Option<PoolJob> {
+    fn try_steal_job_locked(&self, worker_runtime: &WorkerRuntime) -> Option<PoolJob> {
+        let worker_index = worker_runtime.worker_index();
         let queues = self.worker_queues.read();
         let queue_count = queues.len();
         if queue_count <= 1 {
             return None;
         }
-        // Rotate victim probing start index to avoid repeatedly hammering the
-        // same queue under contention.
-        let start = self.next_steal_worker.fetch_add(1, Ordering::Relaxed) % queue_count;
+        // Rotate victim probing without a shared atomic cursor. Each worker has
+        // its own cursor, so failed steal scans do not contend on one cache
+        // line while still spreading victim selection over time.
+        let start = worker_runtime.next_steal_start(queue_count);
         for offset in 0..queue_count {
             let victim = &queues[(start + offset) % queue_count];
             if victim.worker_index() == worker_index {
@@ -1120,7 +1142,7 @@ impl ThreadPoolInner {
             if !victim.is_active() {
                 continue;
             }
-            if let Some(job) = victim.steal_into(local) {
+            if let Some(job) = victim.steal_into(&worker_runtime.local) {
                 return Some(job);
             }
         }

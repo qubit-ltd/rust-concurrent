@@ -46,6 +46,13 @@ struct WorkerQueue {
     /// Submit and steal paths ignore inactive queues so work is not routed to
     /// workers that failed to start.
     active: AtomicBool,
+    /// Whether the owning worker is claiming jobs from its own queue outside
+    /// the state monitor.
+    ///
+    /// Abrupt shutdown waits for this flag to clear before draining queues, so
+    /// a job cannot be concurrently moved from queued to running while
+    /// `shutdown_now` is counting and cancelling queued work.
+    claiming_own_queue: AtomicBool,
 }
 
 impl WorkerQueue {
@@ -65,6 +72,7 @@ impl WorkerQueue {
             inbox: Injector::new(),
             stealer,
             active: AtomicBool::new(false),
+            claiming_own_queue: AtomicBool::new(false),
         }
     }
 
@@ -108,6 +116,32 @@ impl WorkerQueue {
         self.active
             .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
+    }
+
+    /// Attempts to mark this worker as actively claiming from its own queue.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the owner acquired the claim flag, otherwise `false`.
+    fn try_claim_own_queue(&self) -> bool {
+        self.claiming_own_queue
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Clears a previously acquired own-queue claim.
+    fn release_own_queue_claim(&self) {
+        self.claiming_own_queue.store(false, Ordering::Release);
+    }
+
+    /// Returns whether this worker is currently claiming its own queue.
+    ///
+    /// # Returns
+    ///
+    /// `true` while the owner may be moving a job from queued to running
+    /// outside the state monitor.
+    fn is_claiming_own_queue(&self) -> bool {
+        self.claiming_own_queue.load(Ordering::Acquire)
     }
 
     /// Appends a job to the worker's cross-thread inbox.
@@ -183,6 +217,8 @@ struct WorkerRuntime {
     /// Owner-only cursor used to rotate steal victim probing without a shared
     /// atomic write on every steal attempt.
     steal_cursor: Cell<usize>,
+    /// Whether this worker may try the own-queue double-checked fast path.
+    own_queue_dcl_enabled: bool,
 }
 
 impl WorkerRuntime {
@@ -191,18 +227,21 @@ impl WorkerRuntime {
     /// # Parameters
     ///
     /// * `worker_index` - Stable index of the worker owning this runtime.
+    /// * `own_queue_dcl_enabled` - Whether this worker may claim local work
+    ///   outside the state monitor.
     ///
     /// # Returns
     ///
     /// A runtime whose shared queue handle can be registered for submitters and
     /// thieves while its local deque remains owner-only.
-    fn new(worker_index: usize) -> Self {
+    fn new(worker_index: usize, own_queue_dcl_enabled: bool) -> Self {
         let local = Worker::new_fifo();
         let queue = Arc::new(WorkerQueue::new(worker_index, local.stealer()));
         Self {
             queue,
             local,
             steal_cursor: Cell::new(worker_index.wrapping_add(1)),
+            own_queue_dcl_enabled,
         }
     }
 
@@ -325,6 +364,8 @@ pub(crate) struct ThreadPoolInner {
     inflight_submissions: InflightSubmitCounter,
     /// CAS lifecycle state machine used for fast-path shutdown checks.
     lifecycle: LifecycleStateMachine,
+    /// Gate that prevents new own-queue DCL claims during shutdown.
+    own_queue_claim_closed: AtomicBool,
     /// Mutable pool state protected by a monitor.
     state_monitor: Monitor<ThreadPoolState>,
     /// Global fallback queue for accepted submissions.
@@ -385,6 +426,25 @@ impl Drop for SubmitFlightGuard<'_> {
     }
 }
 
+/// RAII guard for a worker's own-queue DCL claim.
+struct OwnQueueClaimGuard<'a> {
+    /// Pool that should be notified when a shutdown waiter may be blocked.
+    inner: &'a ThreadPoolInner,
+    /// Queue whose claim flag was acquired.
+    queue: &'a WorkerQueue,
+}
+
+impl Drop for OwnQueueClaimGuard<'_> {
+    /// Releases the own-queue claim and wakes shutdown waiters when the gate
+    /// has already been closed.
+    fn drop(&mut self) {
+        self.queue.release_own_queue_claim();
+        if self.inner.own_queue_claim_closed.load(Ordering::Acquire) {
+            self.inner.state_monitor.notify_all();
+        }
+    }
+}
+
 /// Reserved worker slot state used to spawn a thread outside the state lock.
 struct WorkerStartReservation {
     /// Stable index assigned to the worker being created.
@@ -402,6 +462,8 @@ struct WorkerStartReservation {
 /// We still use condition-variable wakeups for responsiveness, but periodic
 /// timed rechecks prevent rare lost-wakeup races from stalling shutdown paths.
 const INFLIGHT_SUBMIT_DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(10);
+/// Maximum interval between own-queue claim drain checks during shutdown.
+const OWN_QUEUE_CLAIM_DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(1);
 /// Maximum CAS retries for bounded-queue fast-path slot reservation.
 ///
 /// This keeps fast-path admission opportunistic: we absorb transient CAS
@@ -435,6 +497,7 @@ impl ThreadPoolInner {
             submit_admission: SubmissionAdmission::new_open(),
             inflight_submissions: InflightSubmitCounter::new(),
             lifecycle: LifecycleStateMachine::new_running(),
+            own_queue_claim_closed: AtomicBool::new(false),
             state_monitor: Monitor::new(ThreadPoolState::new(config)),
             global_queue: Mutex::new(VecDeque::new()),
             queue_capacity,
@@ -705,6 +768,109 @@ impl ThreadPoolInner {
     /// queued tasks.
     fn has_active_worker(&self) -> bool {
         self.active_worker_count.load(Ordering::Acquire) > 0
+    }
+
+    /// Returns whether newly spawned workers should use the own-queue DCL path.
+    ///
+    /// # Returns
+    ///
+    /// `true` for pool sizes where benchmark data showed that avoiding the
+    /// state monitor on owner-local queue pops can overcome the extra claim
+    /// bookkeeping cost.
+    ///
+    /// # Implementation notes
+    ///
+    /// The 4-worker synthetic throughput benchmark is sensitive to extra
+    /// atomic traffic, so this path is intentionally disabled there. Existing
+    /// workers keep the decision made at spawn time to avoid adding another
+    /// atomic branch to every worker loop iteration.
+    fn should_enable_own_queue_dcl_for_new_worker(&self) -> bool {
+        let core_pool_size = self.core_pool_size_target.load(Ordering::Acquire);
+        core_pool_size == 1 || core_pool_size >= 8
+    }
+
+    /// Attempts to enter an own-queue DCL claim for one worker.
+    ///
+    /// # Parameters
+    ///
+    /// * `queue` - Queue owned by the worker attempting the fast path.
+    ///
+    /// # Returns
+    ///
+    /// `Some(guard)` when the claim is active. Dropping the guard releases the
+    /// claim. Returns `None` when shutdown has closed the claim gate or the
+    /// queue is already claimed.
+    ///
+    /// # Overall logic
+    ///
+    /// This is the prepare phase of the double-checked flow. We check the
+    /// global gate before and after acquiring the per-worker flag so
+    /// `shutdown_now` can close the gate, wait for all already-started claims,
+    /// and then drain queues without racing a worker that is converting a
+    /// queued job into a running job.
+    fn try_begin_own_queue_claim<'a>(
+        &'a self,
+        queue: &'a WorkerQueue,
+    ) -> Option<OwnQueueClaimGuard<'a>> {
+        if self.own_queue_claim_closed.load(Ordering::Acquire) {
+            return None;
+        }
+        if !queue.try_claim_own_queue() {
+            return None;
+        }
+        if self.own_queue_claim_closed.load(Ordering::Acquire) {
+            queue.release_own_queue_claim();
+            self.state_monitor.notify_all();
+            return None;
+        }
+        Some(OwnQueueClaimGuard { inner: self, queue })
+    }
+
+    /// Returns whether any worker currently holds an own-queue DCL claim.
+    ///
+    /// # Returns
+    ///
+    /// `true` when at least one registered worker may be moving a job from its
+    /// local queue or inbox to running outside the state monitor.
+    fn has_active_own_queue_claims(&self) -> bool {
+        let queues = self.worker_queues.read();
+        queues.iter().any(|queue| queue.is_claiming_own_queue())
+    }
+
+    /// Waits until all own-queue DCL claims have drained.
+    ///
+    /// # Parameters
+    ///
+    /// * `state` - State guard held by shutdown code.
+    ///
+    /// # Returns
+    ///
+    /// The same state guard after no registered worker holds an own-queue
+    /// claim.
+    ///
+    /// # Overall logic
+    ///
+    /// `shutdown_now` closes the claim gate before entering this wait. Existing
+    /// claims are short, but the timed wait makes the shutdown path robust to a
+    /// missed notification while still re-checking the predicate under the
+    /// monitor loop.
+    fn wait_for_own_queue_claims_to_drain_locked<'a>(
+        &self,
+        mut state: MonitorGuard<'a, ThreadPoolState>,
+    ) -> MonitorGuard<'a, ThreadPoolState> {
+        while self.has_active_own_queue_claims() {
+            let (next_state, _) = state.wait_timeout(OWN_QUEUE_CLAIM_DRAIN_POLL_INTERVAL);
+            state = next_state;
+        }
+        state
+    }
+
+    /// Moves one accepted queued job into the running counter.
+    #[inline]
+    fn mark_queued_job_running(&self) {
+        let previous = self.queued_task_count.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous > 0, "thread pool queued task counter underflow");
+        self.running_task_count.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Submits a job into the queue.
@@ -1007,7 +1173,10 @@ impl ThreadPoolInner {
     ///
     /// * `worker_index` - Stable index of the new worker.
     fn register_worker_queue(&self, worker_index: usize) -> WorkerRuntime {
-        let runtime = WorkerRuntime::new(worker_index);
+        let runtime = WorkerRuntime::new(
+            worker_index,
+            self.should_enable_own_queue_dcl_for_new_worker(),
+        );
         self.worker_queues.write().push(Arc::clone(&runtime.queue));
         runtime
     }
@@ -1026,14 +1195,10 @@ impl ThreadPoolInner {
     fn remove_worker_queue(&self, worker_index: usize) -> (Vec<PoolJob>, bool) {
         let queue = {
             let mut queues = self.worker_queues.write();
-            if let Some(position) = queues
+            queues
                 .iter()
                 .position(|queue| queue.worker_index() == worker_index)
-            {
-                Some(queues.remove(position))
-            } else {
-                None
-            }
+                .map(|position| queues.remove(position))
         };
         queue.map_or_else(
             || (Vec::new(), false),
@@ -1042,6 +1207,58 @@ impl ThreadPoolInner {
                 (queue.drain(), was_active)
             },
         )
+    }
+
+    /// Attempts the worker-owned queue fast path using double-checked locking.
+    ///
+    /// # Parameters
+    ///
+    /// * `worker_runtime` - Queue runtime owned by the worker requesting work.
+    ///
+    /// # Returns
+    ///
+    /// `Some(job)` when the worker can claim a job from its own local queue or
+    /// inbox without entering the state monitor; otherwise `None`.
+    ///
+    /// # Overall logic
+    ///
+    /// This method is deliberately narrower than
+    /// [`Self::try_take_queued_job_locked`]:
+    ///
+    /// 1. Check cheap atomics before touching the claim flag.
+    /// 2. Acquire a per-worker claim if shutdown has not closed the DCL gate.
+    /// 3. Re-check lifecycle and queued count after the claim is active.
+    /// 4. Pop only from the owner-local queue and owner inbox.
+    ///
+    /// The claim is the synchronization point with `shutdown_now`. Abrupt
+    /// shutdown closes the gate and waits for active claims before swapping the
+    /// queued counter and draining queues, so this method cannot race queued
+    /// cancellation accounting.
+    fn try_take_own_queued_job_dcl(&self, worker_runtime: &WorkerRuntime) -> Option<PoolJob> {
+        if !worker_runtime.own_queue_dcl_enabled {
+            return None;
+        }
+        if !self.lifecycle.load().is_running() || self.queued_count() == 0 {
+            return None;
+        }
+
+        let _claim = self.try_begin_own_queue_claim(&worker_runtime.queue)?;
+        // Second check after the claim closes the shutdown race window. If
+        // lifecycle changed or no queued work remains, the locked path below
+        // handles shutdown, retirement, or idle waiting.
+        if !self.lifecycle.load().is_running() || self.queued_count() == 0 {
+            return None;
+        }
+
+        if let Some(job) = worker_runtime.local.pop() {
+            self.mark_queued_job_running();
+            return Some(job);
+        }
+        if let Some(job) = worker_runtime.queue.pop_inbox_into(&worker_runtime.local) {
+            self.mark_queued_job_running();
+            return Some(job);
+        }
+        None
     }
 
     /// Attempts to take one queued job for the specified worker.
@@ -1200,6 +1417,7 @@ impl ThreadPoolInner {
     /// The pool rejects later submissions but lets queued work drain.
     pub(crate) fn shutdown(&self) {
         self.submit_admission.close();
+        self.own_queue_claim_closed.store(true, Ordering::Release);
         self.lifecycle.transition_running_to_shutdown();
         let mut state = self.lock_state();
         state = self.wait_for_inflight_submissions_to_drain_locked(state);
@@ -1216,10 +1434,12 @@ impl ThreadPoolInner {
     /// of the request.
     pub(crate) fn shutdown_now(&self) -> ShutdownReport {
         self.submit_admission.close();
+        self.own_queue_claim_closed.store(true, Ordering::Release);
         self.lifecycle.transition_to_stopping();
         let (jobs, report) = {
             let mut state = self.lock_state();
             state = self.wait_for_inflight_submissions_to_drain_locked(state);
+            state = self.wait_for_own_queue_claims_to_drain_locked(state);
             self.sync_lifecycle_locked(&mut state);
             let queued = self.queued_task_count.swap(0, Ordering::AcqRel);
             let running = self.running_count();
@@ -1447,8 +1667,54 @@ fn run_worker(
         job.run();
         finish_running_job(&inner);
     }
+    if worker_runtime.own_queue_dcl_enabled {
+        run_worker_dcl_loop(inner, worker_runtime);
+    } else {
+        run_worker_locked_loop(inner, worker_runtime);
+    }
+}
+
+/// Runs a worker loop that uses only the state-locked queue path.
+///
+/// # Parameters
+///
+/// * `inner` - Shared pool state used for queue access and counters.
+/// * `worker_runtime` - Queue runtime owned by this worker.
+///
+/// # Overall logic
+///
+/// This is the default path for worker counts where DCL claim bookkeeping did
+/// not benchmark well. Keeping it separate avoids paying even a predictable
+/// fast-path branch on every completed task.
+fn run_worker_locked_loop(inner: Arc<ThreadPoolInner>, worker_runtime: WorkerRuntime) {
     loop {
-        let job = wait_for_job(&inner, &worker_runtime);
+        let job = wait_for_job_locked(&inner, &worker_runtime);
+        match job {
+            Some(job) => {
+                job.run();
+                finish_running_job(&inner);
+            }
+            None => return,
+        }
+    }
+}
+
+/// Runs a worker loop that tries the own-queue DCL path before locking state.
+///
+/// # Parameters
+///
+/// * `inner` - Shared pool state used for queue access and counters.
+/// * `worker_runtime` - Queue runtime owned by this worker.
+///
+/// # Overall logic
+///
+/// This loop is used only for worker counts selected at worker creation time.
+/// The DCL path claims only the worker's own local queue and inbox; global
+/// queue probing, stealing, waiting, retirement, and shutdown handling remain
+/// in the state-locked path.
+fn run_worker_dcl_loop(inner: Arc<ThreadPoolInner>, worker_runtime: WorkerRuntime) {
+    loop {
+        let job = wait_for_job_dcl(&inner, &worker_runtime);
         match job {
             Some(job) => {
                 job.run();
@@ -1482,13 +1748,30 @@ fn mark_worker_started(inner: &ThreadPoolInner, worker_queue: &WorkerQueue) {
 /// # Returns
 ///
 /// `Some(job)` when work is available, or `None` when the worker should exit.
-fn wait_for_job(inner: &ThreadPoolInner, worker_runtime: &WorkerRuntime) -> Option<PoolJob> {
+fn wait_for_job_dcl(inner: &ThreadPoolInner, worker_runtime: &WorkerRuntime) -> Option<PoolJob> {
+    if let Some(job) = inner.try_take_own_queued_job_dcl(worker_runtime) {
+        return Some(job);
+    }
+    wait_for_job_locked(inner, worker_runtime)
+}
+
+/// Waits until a worker can take a job or should exit using the locked path.
+///
+/// # Parameters
+///
+/// * `inner` - Shared pool state and monitor wait queue.
+/// * `worker_runtime` - Queue runtime owned by the worker requesting a job.
+///
+/// # Returns
+///
+/// `Some(job)` when work is available, or `None` when the worker should exit.
+fn wait_for_job_locked(inner: &ThreadPoolInner, worker_runtime: &WorkerRuntime) -> Option<PoolJob> {
     let worker_index = worker_runtime.worker_index();
     let mut state = inner.lock_state();
     loop {
         match state.lifecycle {
             ThreadPoolLifecycle::Running => {
-                if let Some(job) = inner.try_take_queued_job_locked(&mut state, worker_runtime) {
+                if let Some(job) = inner.try_take_queued_job_locked(&state, worker_runtime) {
                     return Some(job);
                 }
                 if state.live_workers > state.maximum_pool_size && state.live_workers > 0 {
@@ -1529,7 +1812,7 @@ fn wait_for_job(inner: &ThreadPoolInner, worker_runtime: &WorkerRuntime) -> Opti
                 }
             }
             ThreadPoolLifecycle::Shutdown => {
-                if let Some(job) = inner.try_take_queued_job_locked(&mut state, worker_runtime) {
+                if let Some(job) = inner.try_take_queued_job_locked(&state, worker_runtime) {
                     return Some(job);
                 }
                 unregister_exiting_worker(inner, &mut state, worker_index);

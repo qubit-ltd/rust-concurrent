@@ -10,7 +10,7 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use qubit_function::Callable;
 
-use crate::task::{TaskHandle, task_runner::run_task};
+use crate::task::TaskHandle;
 
 use super::super::{ExecutorService, RejectedExecution, ShutdownReport};
 use super::pool_job::PoolJob;
@@ -312,13 +312,7 @@ impl ExecutorService for ThreadPool {
         E: Send + 'static,
     {
         let (handle, completion) = TaskHandle::completion_pair();
-        let completion_for_run = completion.clone();
-        let job = PoolJob::new(
-            Box::new(move || run_task(task, completion_for_run)),
-            Box::new(move || {
-                completion.cancel();
-            }),
-        );
+        let job = PoolJob::from_task(task, completion);
         self.inner.submit(job)?;
         Ok(handle)
     }

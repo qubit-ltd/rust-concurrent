@@ -17,14 +17,17 @@
 //! Haixing Hu
 
 mod executor_service;
+mod fixed_thread_pool;
 mod rejected_execution;
 mod shutdown_report;
 mod thread_per_task_executor_service;
 mod thread_pool;
 mod tokio_executor_service;
 mod tokio_task_handle;
+mod worker_queue;
 
 pub use executor_service::ExecutorService;
+pub use fixed_thread_pool::{FixedThreadPool, FixedThreadPoolBuilder};
 pub use rejected_execution::RejectedExecution;
 pub use shutdown_report::ShutdownReport;
 pub use thread_per_task_executor_service::ThreadPerTaskExecutorService;

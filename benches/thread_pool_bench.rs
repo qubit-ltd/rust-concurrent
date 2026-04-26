@@ -7,11 +7,11 @@ use std::{
     fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    sync::{mpsc, Arc, OnceLock},
+    sync::{Arc, OnceLock, mpsc},
 };
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use qubit_concurrent::task::service::{ExecutorService, ThreadPool};
+use qubit_concurrent::task::service::{ExecutorService, FixedThreadPool, ThreadPool};
 use rayon::{ThreadPoolBuilder, prelude::*};
 
 /// Environment variable used to override benchmark dataset root path.
@@ -86,6 +86,32 @@ fn run_noop_batch(pool_size: usize, task_count: usize) {
         .block_on(pool.await_termination());
 }
 
+/// Runs no-op tasks on the fixed-size pool under test.
+fn run_fixed_noop_batch(pool_size: usize, task_count: usize) {
+    let pool = FixedThreadPool::new(pool_size).expect("fixed thread pool should be created");
+    let mut handles = Vec::with_capacity(task_count);
+
+    for _ in 0..task_count {
+        let handle = pool
+            .submit_callable(|| Ok::<usize, Infallible>(1))
+            .expect("task should be accepted");
+        handles.push(handle);
+    }
+
+    let mut sum = 0usize;
+    for handle in handles {
+        sum = sum.wrapping_add(handle.get().expect("task should finish"));
+    }
+    black_box(sum);
+
+    pool.shutdown();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime should be created")
+        .block_on(pool.await_termination());
+}
+
 /// Runs one batch of light CPU tasks and waits until the pool terminates.
 fn run_cpu_light_batch(pool_size: usize, task_count: usize) {
     run_cpu_work_batch(pool_size, task_count, 128);
@@ -117,6 +143,33 @@ fn run_cpu_work_batch(pool_size: usize, task_count: usize, inner_iters: usize) {
         sum = sum.wrapping_add(handle.get().expect("task should complete"));
     }
     black_box(sum);
+    pool.shutdown();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime should be created")
+        .block_on(pool.await_termination());
+}
+
+/// Runs a CPU-bound batch on the fixed-size pool under test.
+fn run_fixed_cpu_work_batch(worker_count: usize, task_count: usize, inner_iters: usize) {
+    let pool = FixedThreadPool::new(worker_count).expect("fixed thread pool should be created");
+    let mut handles = Vec::with_capacity(task_count);
+
+    for _ in 0..task_count {
+        let iterations = inner_iters;
+        let handle = pool
+            .submit_callable(move || Ok::<usize, Infallible>(compute_cpu_work(iterations)))
+            .expect("task should be accepted");
+        handles.push(handle);
+    }
+
+    let mut sum = 0usize;
+    for handle in handles {
+        sum = sum.wrapping_add(handle.get().expect("task should finish"));
+    }
+    black_box(sum);
+
     pool.shutdown();
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -168,11 +221,7 @@ fn drain_threadpool_crate_results(receiver: mpsc::Receiver<usize>, task_count: u
 /// * `worker_count` - Number of worker threads.
 /// * `task_count` - Number of tasks in this batch.
 /// * `inner_iters` - CPU iterations performed by each task.
-fn run_threadpool_crate_cpu_work_batch(
-    worker_count: usize,
-    task_count: usize,
-    inner_iters: usize,
-) {
+fn run_threadpool_crate_cpu_work_batch(worker_count: usize, task_count: usize, inner_iters: usize) {
     let pool = threadpool::ThreadPool::new(worker_count);
     let (sender, receiver) = mpsc::channel();
     for _ in 0..task_count {
@@ -291,6 +340,33 @@ fn run_cpu_skewed_batch(pool_size: usize, task_count: usize, spec: &SkewedWorklo
 /// * `worker_count` - Number of worker threads in Rayon.
 /// * `task_count` - Number of tasks in this batch.
 /// * `spec` - Skewed workload profile.
+/// Runs a skewed CPU workload on the fixed-size pool under test.
+fn run_fixed_cpu_skewed_batch(worker_count: usize, task_count: usize, spec: &SkewedWorkloadSpec) {
+    let pool = FixedThreadPool::new(worker_count).expect("fixed thread pool should be created");
+    let mut handles = Vec::with_capacity(task_count);
+
+    for task_index in 0..task_count {
+        let iterations = skewed_iters_for_task(task_index, spec);
+        let handle = pool
+            .submit_callable(move || Ok::<usize, Infallible>(compute_cpu_work(iterations)))
+            .expect("task should be accepted");
+        handles.push(handle);
+    }
+
+    let mut sum = 0usize;
+    for handle in handles {
+        sum = sum.wrapping_add(handle.get().expect("task should finish"));
+    }
+    black_box(sum);
+
+    pool.shutdown();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime should be created")
+        .block_on(pool.await_termination());
+}
+
 fn run_rayon_cpu_skewed_batch(worker_count: usize, task_count: usize, spec: &SkewedWorkloadSpec) {
     let pool = ThreadPoolBuilder::new()
         .num_threads(worker_count)
@@ -854,6 +930,32 @@ fn run_cpu_dataset_batch(pool_size: usize, iterations: &[usize]) {
 ///
 /// * `worker_count` - Number of Rayon threads.
 /// * `iterations` - Per-task iteration counts.
+/// Runs a test-data-derived CPU workload on the fixed-size pool under test.
+fn run_fixed_cpu_dataset_batch(worker_count: usize, iterations: &[usize]) {
+    let pool = FixedThreadPool::new(worker_count).expect("fixed thread pool should be created");
+    let mut handles = Vec::with_capacity(iterations.len());
+
+    for &task_iterations in iterations {
+        let handle = pool
+            .submit_callable(move || Ok::<usize, Infallible>(compute_cpu_work(task_iterations)))
+            .expect("task should be accepted");
+        handles.push(handle);
+    }
+
+    let mut sum = 0usize;
+    for handle in handles {
+        sum = sum.wrapping_add(handle.get().expect("task should finish"));
+    }
+    black_box(sum);
+
+    pool.shutdown();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime should be created")
+        .block_on(pool.await_termination());
+}
+
 fn run_rayon_cpu_dataset_batch(worker_count: usize, iterations: &[usize]) {
     let pool = ThreadPoolBuilder::new()
         .num_threads(worker_count)
@@ -948,6 +1050,33 @@ fn run_io_file_batch(pool_size: usize, files: &[PathBuf]) {
 ///
 /// * `worker_count` - Number of Rayon threads.
 /// * `files` - File paths read in parallel.
+/// Runs a file checksum workload on the fixed-size pool under test.
+fn run_fixed_io_file_batch(worker_count: usize, files: &[PathBuf]) {
+    let pool = FixedThreadPool::new(worker_count).expect("fixed thread pool should be created");
+    let mut handles = Vec::with_capacity(files.len());
+
+    for path in files {
+        let path = path.clone();
+        let handle = pool
+            .submit_callable(move || Ok::<usize, Infallible>(file_checksum(&path)))
+            .expect("task should be accepted");
+        handles.push(handle);
+    }
+
+    let mut sum = 0usize;
+    for handle in handles {
+        sum = sum.wrapping_add(handle.get().expect("task should finish"));
+    }
+    black_box(sum);
+
+    pool.shutdown();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime should be created")
+        .block_on(pool.await_termination());
+}
+
 fn run_rayon_io_file_batch(worker_count: usize, files: &[PathBuf]) {
     let pool = ThreadPoolBuilder::new()
         .num_threads(worker_count)
@@ -1046,6 +1175,38 @@ fn run_graph_dataset_batch(pool_size: usize, workload: &DatasetGraphWorkload) {
 ///
 /// * `worker_count` - Number of Rayon threads.
 /// * `workload` - Graph workload with adjacency and frontier data.
+/// Runs graph traversal tasks on the fixed-size pool under test.
+fn run_fixed_graph_dataset_batch(worker_count: usize, workload: &DatasetGraphWorkload) {
+    let pool = FixedThreadPool::new(worker_count).expect("fixed thread pool should be created");
+    let offsets = Arc::clone(&workload.offsets);
+    let edges = Arc::clone(&workload.edges);
+    let mut handles = Vec::with_capacity(workload.frontier.len());
+
+    for &vertex in &workload.frontier {
+        let offsets = Arc::clone(&offsets);
+        let edges = Arc::clone(&edges);
+        let handle = pool
+            .submit_callable(move || {
+                Ok::<usize, Infallible>(traverse_frontier_vertex(&offsets, &edges, vertex))
+            })
+            .expect("task should be accepted");
+        handles.push(handle);
+    }
+
+    let mut sum = 0usize;
+    for handle in handles {
+        sum = sum.wrapping_add(handle.get().expect("task should finish"));
+    }
+    black_box(sum);
+
+    pool.shutdown();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime should be created")
+        .block_on(pool.await_termination());
+}
+
 fn run_rayon_graph_dataset_batch(worker_count: usize, workload: &DatasetGraphWorkload) {
     let pool = ThreadPoolBuilder::new()
         .num_threads(worker_count)
@@ -1091,7 +1252,7 @@ fn run_threadpool_crate_graph_dataset_batch(worker_count: usize, workload: &Data
 /// Benchmarks throughput under different worker counts and task types.
 fn bench_thread_pool_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("thread_pool_throughput");
-    let workers = [1usize, 2, 4, 8];
+    let workers = [1usize, 2, 4, 8, 16, 32];
     let task_count = 2_000usize;
     group.throughput(Throughput::Elements(task_count as u64));
     for worker_count in workers {
@@ -1101,18 +1262,28 @@ fn bench_thread_pool_throughput(c: &mut Criterion) {
             |b, &wc| b.iter(|| run_noop_batch(wc, task_count)),
         );
         group.bench_with_input(
+            BenchmarkId::new("fixed_noop_tasks", worker_count),
+            &worker_count,
+            |b, &wc| b.iter(|| run_fixed_noop_batch(wc, task_count)),
+        );
+        group.bench_with_input(
             BenchmarkId::new("cpu_light_tasks", worker_count),
             &worker_count,
             |b, &wc| b.iter(|| run_cpu_light_batch(wc, task_count)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("fixed_cpu_light_tasks", worker_count),
+            &worker_count,
+            |b, &wc| b.iter(|| run_fixed_cpu_work_batch(wc, task_count, 128)),
         );
     }
     group.finish();
 }
 
-/// Compares thread pool throughput against Rayon and the `threadpool` crate.
+/// Compares dynamic and fixed thread pool throughput against Rayon and the `threadpool` crate.
 fn bench_thread_pool_vs_libraries(c: &mut Criterion) {
     let mut group = c.benchmark_group("thread_pool_vs_libraries");
-    let workers = [1usize, 4, 8];
+    let workers = [1usize, 4, 8, 16, 32];
     let granularities = [256usize, 2_048];
     let total_iters = 2_048_000usize;
     for worker_count in workers {
@@ -1124,6 +1295,13 @@ fn bench_thread_pool_vs_libraries(c: &mut Criterion) {
                 BenchmarkId::from_parameter(thread_pool_id),
                 &worker_count,
                 |b, &wc| b.iter(|| run_cpu_work_batch(wc, task_count, inner_iters)),
+            );
+            let fixed_thread_pool_id =
+                format!("fixed_thread_pool/workers={worker_count}/iters={inner_iters}");
+            group.bench_with_input(
+                BenchmarkId::from_parameter(fixed_thread_pool_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_fixed_cpu_work_batch(wc, task_count, inner_iters)),
             );
             let rayon_id = format!("rayon/workers={worker_count}/iters={inner_iters}");
             group.bench_with_input(
@@ -1147,7 +1325,7 @@ fn bench_thread_pool_vs_libraries(c: &mut Criterion) {
 /// Benchmarks scheduling overhead vs task granularity under fixed total work.
 fn bench_thread_pool_granularity(c: &mut Criterion) {
     let mut group = c.benchmark_group("thread_pool_granularity");
-    let workers = [1usize, 4, 8];
+    let workers = [1usize, 4, 8, 16, 32];
     let granularities = [32usize, 256, 2_048];
     let total_iters = 2_048_000usize;
     for worker_count in workers {
@@ -1158,16 +1336,22 @@ fn bench_thread_pool_granularity(c: &mut Criterion) {
             group.bench_with_input(BenchmarkId::from_parameter(id), &worker_count, |b, &wc| {
                 b.iter(|| run_cpu_work_batch(wc, task_count, inner_iters))
             });
+            let fixed_id = format!("fixed_thread_pool/workers={worker_count}/iters={inner_iters}");
+            group.bench_with_input(
+                BenchmarkId::from_parameter(fixed_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_fixed_cpu_work_batch(wc, task_count, inner_iters)),
+            );
         }
     }
     group.finish();
 }
 
-/// Compares ThreadPool, Rayon, and the `threadpool` crate on skewed workloads
-/// where a small fraction of tasks are much heavier than the rest.
+/// Compares dynamic and fixed thread pools, Rayon, and the `threadpool` crate
+/// on skewed workloads where a small fraction of tasks are much heavier than the rest.
 fn bench_thread_pool_skewed_workload(c: &mut Criterion) {
     let mut group = c.benchmark_group("thread_pool_skewed_workload");
-    let workers = [4usize, 8];
+    let workers = [4usize, 8, 16, 32];
     let profiles = [
         SkewedWorkloadSpec {
             name: "heavy5_light95",
@@ -1199,6 +1383,15 @@ fn bench_thread_pool_skewed_workload(c: &mut Criterion) {
                 &worker_count,
                 |b, &wc| b.iter(|| run_cpu_skewed_batch(wc, task_count, profile)),
             );
+            let fixed_thread_pool_id = format!(
+                "fixed_thread_pool/workers={worker_count}/profile={}",
+                profile.name
+            );
+            group.bench_with_input(
+                BenchmarkId::from_parameter(fixed_thread_pool_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_fixed_cpu_skewed_batch(wc, task_count, profile)),
+            );
             let rayon_id = format!("rayon/workers={worker_count}/profile={}", profile.name);
             group.bench_with_input(
                 BenchmarkId::from_parameter(rayon_id),
@@ -1210,23 +1403,21 @@ fn bench_thread_pool_skewed_workload(c: &mut Criterion) {
             group.bench_with_input(
                 BenchmarkId::from_parameter(threadpool_id),
                 &worker_count,
-                |b, &wc| {
-                    b.iter(|| run_threadpool_crate_cpu_skewed_batch(wc, task_count, profile))
-                },
+                |b, &wc| b.iter(|| run_threadpool_crate_cpu_skewed_batch(wc, task_count, profile)),
             );
         }
     }
     group.finish();
 }
 
-/// Compares ThreadPool, Rayon, and the `threadpool` crate on CPU workloads
-/// derived from PBBS text data.
+/// Compares dynamic and fixed thread pools, Rayon, and the `threadpool` crate
+/// on CPU workloads derived from PBBS text data.
 fn bench_thread_pool_dataset_cpu(c: &mut Criterion) {
     let Some(workload) = dataset_cpu_workload() else {
         return;
     };
     let mut group = c.benchmark_group("thread_pool_dataset_cpu");
-    let workers = [4usize, 8];
+    let workers = [4usize, 8, 16, 32];
     let task_counts = [512usize, 2_048];
     for worker_count in workers {
         for task_count in task_counts {
@@ -1243,6 +1434,15 @@ fn bench_thread_pool_dataset_cpu(c: &mut Criterion) {
                 BenchmarkId::from_parameter(thread_pool_id),
                 &worker_count,
                 |b, &wc| b.iter(|| run_cpu_dataset_batch(wc, iterations)),
+            );
+            let fixed_thread_pool_id = format!(
+                "fixed_thread_pool/workers={worker_count}/dataset={}/tasks={task_count}",
+                workload.name
+            );
+            group.bench_with_input(
+                BenchmarkId::from_parameter(fixed_thread_pool_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_fixed_cpu_dataset_batch(wc, iterations)),
             );
             let rayon_id = format!(
                 "rayon/workers={worker_count}/dataset={}/tasks={task_count}",
@@ -1267,8 +1467,8 @@ fn bench_thread_pool_dataset_cpu(c: &mut Criterion) {
     group.finish();
 }
 
-/// Compares ThreadPool, Rayon, and the `threadpool` crate on dataset-backed IO
-/// workloads.
+/// Compares dynamic and fixed thread pools, Rayon, and the `threadpool` crate
+/// on dataset-backed IO workloads.
 fn bench_thread_pool_dataset_io(c: &mut Criterion) {
     let mut workloads = Vec::new();
     if let Some(small) = dataset_io_small_workload() {
@@ -1281,7 +1481,7 @@ fn bench_thread_pool_dataset_io(c: &mut Criterion) {
         return;
     }
     let mut group = c.benchmark_group("thread_pool_dataset_io");
-    let workers = [4usize, 8];
+    let workers = [4usize, 8, 16, 32];
     for workload in workloads {
         group.throughput(Throughput::Elements(workload.files.len() as u64));
         for worker_count in workers {
@@ -1294,14 +1494,25 @@ fn bench_thread_pool_dataset_io(c: &mut Criterion) {
                 &worker_count,
                 |b, &wc| b.iter(|| run_io_file_batch(wc, &workload.files)),
             );
+            let fixed_thread_pool_id = format!(
+                "fixed_thread_pool/workers={worker_count}/dataset={}",
+                workload.name
+            );
+            group.bench_with_input(
+                BenchmarkId::from_parameter(fixed_thread_pool_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_fixed_io_file_batch(wc, &workload.files)),
+            );
             let rayon_id = format!("rayon/workers={worker_count}/dataset={}", workload.name);
             group.bench_with_input(
                 BenchmarkId::from_parameter(rayon_id),
                 &worker_count,
                 |b, &wc| b.iter(|| run_rayon_io_file_batch(wc, &workload.files)),
             );
-            let threadpool_id =
-                format!("threadpool/workers={worker_count}/dataset={}", workload.name);
+            let threadpool_id = format!(
+                "threadpool/workers={worker_count}/dataset={}",
+                workload.name
+            );
             group.bench_with_input(
                 BenchmarkId::from_parameter(threadpool_id),
                 &worker_count,
@@ -1312,8 +1523,8 @@ fn bench_thread_pool_dataset_io(c: &mut Criterion) {
     group.finish();
 }
 
-/// Compares ThreadPool, Rayon, and the `threadpool` crate on PBBS
-/// graph-traversal workloads.
+/// Compares dynamic and fixed thread pools, Rayon, and the `threadpool` crate
+/// on PBBS graph-traversal workloads.
 fn bench_thread_pool_dataset_graph_traversal(c: &mut Criterion) {
     let mut workloads = Vec::new();
     if let Some(workload) = dataset_graph_rand_local_workload() {
@@ -1326,7 +1537,7 @@ fn bench_thread_pool_dataset_graph_traversal(c: &mut Criterion) {
         return;
     }
     let mut group = c.benchmark_group("thread_pool_dataset_graph_traversal");
-    let workers = [4usize, 8];
+    let workers = [4usize, 8, 16, 32];
     for workload in workloads {
         group.throughput(Throughput::Elements(workload.frontier.len() as u64));
         for worker_count in workers {
@@ -1339,14 +1550,25 @@ fn bench_thread_pool_dataset_graph_traversal(c: &mut Criterion) {
                 &worker_count,
                 |b, &wc| b.iter(|| run_graph_dataset_batch(wc, workload)),
             );
+            let fixed_thread_pool_id = format!(
+                "fixed_thread_pool/workers={worker_count}/dataset={}",
+                workload.name
+            );
+            group.bench_with_input(
+                BenchmarkId::from_parameter(fixed_thread_pool_id),
+                &worker_count,
+                |b, &wc| b.iter(|| run_fixed_graph_dataset_batch(wc, workload)),
+            );
             let rayon_id = format!("rayon/workers={worker_count}/dataset={}", workload.name);
             group.bench_with_input(
                 BenchmarkId::from_parameter(rayon_id),
                 &worker_count,
                 |b, &wc| b.iter(|| run_rayon_graph_dataset_batch(wc, workload)),
             );
-            let threadpool_id =
-                format!("threadpool/workers={worker_count}/dataset={}", workload.name);
+            let threadpool_id = format!(
+                "threadpool/workers={worker_count}/dataset={}",
+                workload.name
+            );
             group.bench_with_input(
                 BenchmarkId::from_parameter(threadpool_id),
                 &worker_count,

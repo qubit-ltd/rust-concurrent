@@ -31,6 +31,11 @@ Qubit Concurrent provides easy-to-use wrappers around both synchronous and async
 ### ⚙️ **Task Execution**
 - **Executor**: Execution strategy trait under `task::executor`, with `execute` for `Runnable` tasks and `call` for `Callable` tasks
 - **ExecutorService**: Managed task service under `task::service`, with `submit`, `submit_callable`, and graceful shutdown support
+- **BlockingExecutorService / ThreadPool**: Managed service for synchronous tasks that may block an OS thread
+- **RayonExecutorService**: Managed service for CPU-bound synchronous tasks backed by Rayon
+- **TokioBlockingExecutorService**: Tokio-backed blocking service using `spawn_blocking`
+- **TokioIoExecutorService**: Tokio-backed async service for `Future<Output = Result<_, _>>` tasks
+- **ExecutionServices**: Unified facade that routes work to blocking, CPU, Tokio blocking, and Tokio IO domains
 - **FutureExecutor**: Executor specialization whose execution carrier is a future
 - **Runnable / Callable**: Fallible reusable task abstractions provided by `qubit-function`
 - **Clear acceptance semantics**: `ExecutorService` acceptance is separate from task success
@@ -388,7 +393,15 @@ fn main() {
 ```rust
 use qubit_concurrent::task::{
     executor::{DirectExecutor, Executor, TokioExecutor},
-    service::{ExecutorService, ThreadPerTaskExecutorService},
+    service::{
+        BlockingExecutorService,
+        ExecutionServices,
+        ExecutorService,
+        RayonExecutorService,
+        ThreadPerTaskExecutorService,
+        TokioBlockingExecutorService,
+        TokioIoExecutorService,
+    },
 };
 use std::io;
 
@@ -413,6 +426,68 @@ async fn main() {
     handle.get().expect("task result is observed through the handle");
     service.shutdown();
     service.await_termination().await;
+
+    let blocking = BlockingExecutorService::new(2).expect("blocking service should be created");
+    blocking
+        .submit(|| Ok::<(), io::Error>(()))
+        .expect("blocking service should accept task")
+        .get()
+        .expect("blocking task should complete");
+    blocking.shutdown();
+    blocking.await_termination().await;
+
+    let cpu = RayonExecutorService::builder()
+        .num_threads(2)
+        .build()
+        .expect("rayon service should be created");
+    let cpu_value = cpu
+        .submit_callable(|| Ok::<usize, io::Error>(7 * 6))
+        .expect("rayon service should accept task")
+        .await
+        .expect("cpu task should complete");
+    assert_eq!(cpu_value, 42);
+    cpu.shutdown();
+    cpu.await_termination().await;
+
+    let tokio_blocking = TokioBlockingExecutorService::new();
+    let blocking_value = tokio_blocking
+        .submit_callable(|| Ok::<usize, io::Error>(40 + 2))
+        .expect("tokio blocking service should accept task")
+        .await
+        .expect("tokio blocking task should complete");
+    assert_eq!(blocking_value, 42);
+    tokio_blocking.shutdown();
+    tokio_blocking.await_termination().await;
+
+    let io_service = TokioIoExecutorService::new();
+    let io_value = io_service
+        .spawn(async { Ok::<usize, io::Error>(42) })
+        .expect("tokio io service should accept future")
+        .await
+        .expect("tokio io task should complete");
+    assert_eq!(io_value, 42);
+    io_service.shutdown();
+    io_service.await_termination().await;
+
+    let services = ExecutionServices::builder()
+        .blocking_pool_size(2)
+        .cpu_threads(2)
+        .build()
+        .expect("execution-services facade should be created");
+    let routed_cpu = services
+        .submit_cpu_callable(|| Ok::<usize, io::Error>(21 * 2))
+        .expect("cpu route should accept task")
+        .await
+        .expect("cpu route should complete");
+    let routed_io = services
+        .spawn_io(async { Ok::<usize, io::Error>(42) })
+        .expect("io route should accept task")
+        .await
+        .expect("io route should complete");
+    assert_eq!(routed_cpu, 42);
+    assert_eq!(routed_io, 42);
+    services.shutdown();
+    services.await_termination().await;
 }
 ```
 
@@ -529,6 +604,20 @@ A managed task service with submission and lifecycle APIs.
 Service-related types live under `task::service`.
 
 `submit` and `submit_callable` return `Ok(handle)` when the service accepts the task. That does not mean the task has started or succeeded. Task success, task failure, panic, or cancellation is observed through the returned handle.
+
+Common synchronous service implementations:
+
+- [`BlockingExecutorService`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/type.BlockingExecutorService.html) / [`ThreadPool`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/struct.ThreadPool.html) - Managed service for synchronous tasks that may block OS threads
+- [`RayonExecutorService`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/struct.RayonExecutorService.html) - Managed service for CPU-bound synchronous tasks
+- [`TokioBlockingExecutorService`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/type.TokioBlockingExecutorService.html) / [`TokioExecutorService`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/struct.TokioExecutorService.html) - Tokio-backed blocking service using `spawn_blocking`
+
+Async Future-based service:
+
+- [`TokioIoExecutorService`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/struct.TokioIoExecutorService.html) - Tokio-backed service for `Future<Output = Result<_, _>>` tasks via `spawn`
+
+Unified facade:
+
+- [`ExecutionServices`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/struct.ExecutionServices.html) - Routes blocking, CPU-bound, Tokio blocking, and async IO tasks through dedicated execution domains
 
 **Methods:**
 - [`submit<T, E>(&self, task: T)`](https://docs.rs/qubit-concurrent/latest/qubit_concurrent/task/service/trait.ExecutorService.html#method.submit) - Submit a `Runnable<E>` background task

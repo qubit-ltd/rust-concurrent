@@ -31,6 +31,8 @@ doctest = true
 qubit-common = "0.6"
 # Atomic utilities
 qubit-atomic = "0.10"
+# CPU-bound executor service
+rayon = "1.12"
 # Async runtime
 tokio = { version = "1.5", features = ["sync", "rt"] }
 # Error handling
@@ -47,8 +49,6 @@ qubit-function = "0.10"
 [dev-dependencies]
 tokio = { version = "1.5", features = ["macros", "rt-multi-thread", "time"] }
 criterion = "0.5"
-rayon = "1.12"
-threadpool = "1.8"
 
 [[bench]]
 name = "thread_pool_bench"
